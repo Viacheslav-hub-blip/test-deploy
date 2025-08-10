@@ -4,7 +4,7 @@ function AuthPage() {
     const [data, setData] = useState();
     const get_text = async () => {
         try {
-            const response = await fetch(`http://127.0.0.1:8000/`)
+            const response = await fetch(`http://87.228.36.55/api/`)
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
