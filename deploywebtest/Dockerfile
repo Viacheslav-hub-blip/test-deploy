@@ -5,7 +5,7 @@ RUN npm install
 COPY . .
 RUN npm build
 
-FROM nginx:stable-appine
+FROM nginx:stable-alpine
 
 COPY --from=build /dist /usr/share/nginx/html
 COPY --from=build nginx.conf /ect/nginx/conf.d/default.conf
