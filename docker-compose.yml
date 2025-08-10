@@ -1,0 +1,29 @@
+networks:
+  dev:
+
+services:
+  nginx:
+    image: nginx:stable-alpine
+    ports:
+      - "80:80"
+
+    volumes:
+      - './nginx.conf:/ect/nginx/nginx.conf'
+
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - dev
+
+  backend:
+    build:
+      context: ./TestDeploy
+    networks:
+      - dev
+
+  frontend:
+    build:
+      context: ./deploywebtest
+    networks:
+      - dev
