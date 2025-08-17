@@ -1,6 +1,46 @@
+from datetime import datetime
+from pathlib import Path
+
 import uvicorn
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
+import logging
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
+
+LOG_DIR = Path("logs")
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler()  # Вывод также в консоль (опционально)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+DB_CONFIG = {
+    "username": "postgres",
+    "password": "123",  # Замените на реальный пароль
+    "host": "localhost",  # Имя сервиса в Docker Compose или localhost
+    "port": "5432",
+    "database": "tester"
+}
+
+# Подключение к PostgreSQL
+DATABASE_URL = f"postgresql+psycopg2://{DB_CONFIG['username']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
+
+try:
+    engine = create_engine(DATABASE_URL)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    logger.info("✅ Подключение к PostgreSQL успешно")
+except SQLAlchemyError as e:
+    logger.error(f"❌ Ошибка подключения к БД: {e}")
+    raise
 
 app = FastAPI()
 
@@ -18,7 +58,22 @@ app.add_middleware(
 )
 
 
+# Тестовый запрос к БД
+def test_db_connection():
+    try:
+        with SessionLocal() as session:
+            result = session.execute(text("SELECT version()"))
+            logger.info(f"Версия PostgreSQL: {result.scalar()}")
+    except Exception as e:
+        logger.error(f"Ошибка при проверке БД: {e}")
+
+
+@app.on_event("startup")
+async def startup():
+    logger.info("Сервер запущен")
+    test_db_connection()
+
+
 @app.get("/")
 def root():
     return "Привет"
-
