@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -32,8 +33,7 @@ DB_CONFIG = {
 }
 
 # Подключение к PostgreSQL
-DATABASE_URL = f"postgresql+psycopg2://{DB_CONFIG['username']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
-
+DATABASE_URL = os.getenv("DATABASE_URL")
 try:
     engine = create_engine(DATABASE_URL)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

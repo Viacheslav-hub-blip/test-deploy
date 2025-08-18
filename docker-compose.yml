@@ -1,20 +1,19 @@
-version: "3.8"
+version: '3.8'
 
 networks:
   dev:
 
 services:
-  backend:
-    build:
-      context: ./TestDeploy
-      dockerfile: Dockerfile
-    networks:
-      - dev
-
-  frontend:
-    build:
-      context: ./deploywebtest
-      dockerfile: Dockerfile
+  db:  # Новый сервис с PostgreSQL
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123
+      POSTGRES_DB: tester
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"  # Проброс порта для доступа с хоста (опционально)
     networks:
       - dev
 
@@ -23,9 +22,28 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - './nginx.conf:/etc/nginx/nginx.conf'
     depends_on:
       - backend
       - frontend
     networks:
       - dev
+
+  backend:
+    build:
+      context: ./TestDeploy
+    environment:  # Добавляем переменные для подключения к БД
+      DATABASE_URL: "postgresql+psycopg2://postgres:123@db:5432/tester"
+    depends_on:
+      - db  # Зависимость от сервиса БД
+    networks:
+      - dev
+
+  frontend:
+    build:
+      context: ./deploywebtest
+    networks:
+      - dev
+
+volumes:
+  postgres_data:  # Постоянное хранилище для БД
