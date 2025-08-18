@@ -87,7 +87,7 @@ def get_all_users():
 
 
 @app.get("/inssert_user")
-def insert_user():
+def insert_user_route():
     print("ДОБАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ")
     insert_user(
         "test_email",
