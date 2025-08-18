@@ -12,6 +12,7 @@ services:
       POSTGRES_DB: tester
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro  # Обратите внимание на :ro (read-only)
     ports:
       - "5432:5432"  # Проброс порта для доступа с хоста (опционально)
     networks:
