@@ -16,6 +16,7 @@ services:
       - "5432:5432"  # Проброс порта для доступа с хоста (опционально)
     networks:
       - dev
+    restart: unless-stopped
 
   nginx:
     image: nginx:stable-alpine
