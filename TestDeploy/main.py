@@ -1,15 +1,19 @@
+import asyncio
 import os
 from datetime import datetime
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from starlette.middleware.cors import CORSMiddleware
 import logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 from src.database.repositories.user_rep import select_all, insert_user
+from fastapi.responses import StreamingResponse
+
+from src.model.llm import llm
 
 LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
@@ -95,3 +99,23 @@ def insert_user_route():
         "123"
     )
     return "Пользователь добавлен"
+
+
+async def generate_stream(prompt: str):
+    for chunk in llm.stream(prompt):
+        yield f"{chunk.content}\n\n"
+        await asyncio.sleep(0.01)  # Небольшая задержка для управления потоком
+
+
+@app.post("/stream")
+async def stream_response(request: Request):
+    data = await request.json()
+    prompt = data.get("prompt", "")
+    return StreamingResponse(
+        generate_stream(prompt),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
