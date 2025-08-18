@@ -9,6 +9,7 @@ import logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
+from src.database.repositories.user_rep import select_all, insert_user
 
 LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
@@ -77,3 +78,18 @@ async def startup():
 @app.get("/")
 def root():
     return "Привет"
+
+
+@app.get("/users")
+def get_all_users():
+    return select_all()
+
+
+@app.get("/inssert_user")
+def insert_user():
+    insert_user(
+        "test_email",
+        "test_login",
+        "123"
+    )
+    return "Пользователь добавлен"
