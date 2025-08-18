@@ -82,11 +82,13 @@ def root():
 
 @app.get("/users")
 def get_all_users():
+    print("ПОЛУЧЕНИЕ ПОЛЬЗОВАТЕЛЯ")
     return select_all()
 
 
 @app.get("/inssert_user")
 def insert_user():
+    print("ДОБАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ")
     insert_user(
         "test_email",
         "test_login",
