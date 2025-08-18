@@ -103,6 +103,7 @@ def insert_user_route():
 
 async def generate_stream(prompt: str):
     for chunk in llm.stream(prompt):
+        print("chunk size", len(chunk.content))
         yield f"{chunk.content}\n\n"
         await asyncio.sleep(0.01)  # Небольшая задержка для управления потоком
 
