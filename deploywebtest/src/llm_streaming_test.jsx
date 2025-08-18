@@ -23,7 +23,7 @@ function StreamComponent() {
         setController(newController);
 
         try {
-            const response = await fetch('http://87.228.36.55/api/stream/', {
+            const response = await fetch('http://87.228.36.55/api/stream', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
