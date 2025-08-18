@@ -101,11 +101,17 @@ def insert_user_route():
     return "Пользователь добавлен"
 
 
-async def generate_stream(prompt: str):
-    for chunk in llm.stream(prompt):
-        print("chunk size", len(chunk.content))
-        yield f"{chunk.content}\n\n"
-        await asyncio.sleep(0.01)  # Небольшая задержка для управления потоком
+async def generate_stream(prompt: str, chunk_size: int = 10):
+    buffer = ""
+    for chunk in llm.stream(prompt):  # Ваш существующий поток
+        buffer += chunk.content
+        while len(buffer) >= chunk_size:
+            yield f"{buffer[:chunk_size]}"
+            buffer = buffer[chunk_size:]
+            await asyncio.sleep(0.01)
+
+    if buffer:  # Отправить остаток
+        yield f"{buffer}"
 
 
 @app.post("/stream")
