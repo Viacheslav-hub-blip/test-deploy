@@ -125,5 +125,6 @@ async def stream_response(request: Request):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
         }
     )
