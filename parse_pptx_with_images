@@ -1,0 +1,184 @@
+import cv2
+import numpy as np
+from paddleocr import PPStructure
+from pptx import Presentation
+from pptx.util import Emu
+
+# ==========================================
+# 1. НАСТРОЙКА МОДЕЛИ ЛЕЙАУТА
+# ==========================================
+# table=False, ocr=False -> нам нужна только СТРУКТУРА (квадратики зон), 
+# сам текст мы возьмем из PPTX, это быстрее и точнее.
+layout_engine = PPStructure(show_log=False, image_orientation=False, table=False, ocr=False, lang='en')
+
+class VisualGrouper:
+    def __init__(self, slide, image_path):
+        self.slide = slide
+        self.image_path = image_path
+        
+        # Размеры PPTX (в EMU)
+        self.slide_width_emu = slide.parent.slide_width
+        self.slide_height_emu = slide.parent.slide_height
+        
+        # Размеры Картинки (в пикселях)
+        self.img = cv2.imread(image_path)
+        self.img_h, self.img_w = self.img.shape[:2]
+        
+        # Коэффициенты масштабирования (EMU -> Pixels)
+        self.scale_x = self.img_w / self.slide_width_emu
+        self.scale_y = self.img_h / self.slide_height_emu
+
+    def emu_to_pixels(self, shape):
+        """Переводит координаты шейпа PPTX в пиксели картинки."""
+        x = int(shape.left * self.scale_x)
+        y = int(shape.top * self.scale_y)
+        w = int(shape.width * self.scale_x)
+        h = int(shape.height * self.scale_y)
+        return (x, y, x + w, y + h) # x1, y1, x2, y2
+
+    def get_iou(self, boxA, boxB):
+        """
+        Считает Intersection over Union (пересечение).
+        Помогает понять, насколько шейп находится внутри зоны.
+        box = (x1, y1, x2, y2)
+        """
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+
+        interArea = max(0, xB - xA) * max(0, yB - yA)
+        if interArea == 0: return 0
+
+        boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+        # Мы считаем процент вхождения ШЕЙПА (boxA) в ЗОНУ (boxB)
+        # Нам важно, чтобы шейп был внутри зоны, а не наоборот
+        return interArea / boxAArea
+
+    def analyze(self):
+        # 1. Получаем зоны от OCR (Layout Detection)
+        # result структуры: [{'type': 'text', 'bbox': [x1, y1, x2, y2], ...}, ...]
+        layout_results = layout_engine(self.img)
+        
+        # Создаем контейнеры (группы) на основе зон OCR
+        groups = []
+        for region in layout_results:
+            groups.append({
+                "type": region['type'], # figure, title, text, table
+                "bbox": region['bbox'], # Координаты зоны на картинке
+                "elements": []          # Сюда положим объекты PPTX
+            })
+
+        # Добавим "Мусорную корзину" для объектов, которые OCR не заметил
+        orphans = []
+
+        # 2. Матчинг объектов PPTX в зоны OCR
+        # Сортируем шейпы PPTX, чтобы мелкие элементы обрабатывались
+        shapes = list(self.slide.shapes)
+        
+        for shape in shapes:
+            if not hasattr(shape, "left"): continue # Пропуск странных объектов
+            
+            shape_box = self.emu_to_pixels(shape) # (x1, y1, x2, y2)
+            
+            best_iou = 0
+            best_group_idx = -1
+            
+            # Ищем, в какую зону лучше всего попадает этот шейп
+            for idx, group in enumerate(groups):
+                # group['bbox'] - это [x1, y1, x2, y2]
+                iou = self.get_iou(shape_box, group['bbox'])
+                
+                # Порог: если шейп хотя бы на 40% внутри зоны
+                if iou > 0.4 and iou > best_iou:
+                    best_iou = iou
+                    best_group_idx = idx
+            
+            if best_group_idx != -1:
+                groups[best_group_idx]["elements"].append(shape)
+            else:
+                orphans.append(shape)
+
+        return groups, orphans
+
+# ==========================================
+# 2. ФУНКЦИЯ ПАРСИНГА ДАННЫХ ИЗ ГРУПП
+# ==========================================
+
+def parse_visual_groups(groups):
+    parsed_data = []
+    
+    # Сортируем группы сверху-вниз (по их визуальному положению)
+    sorted_groups = sorted(groups, key=lambda g: g['bbox'][1])
+    
+    for group in sorted_groups:
+        if not group['elements']: continue
+        
+        group_content = {
+            "layout_type": group['type'], # 'figure', 'text', 'table' от OCR
+            "content": [],
+            "raw_text": ""
+        }
+        
+        # Внутри группы сортируем элементы PPTX сверху-вниз
+        sorted_elements = sorted(group['elements'], key=lambda s: s.top)
+        
+        text_accumulator = []
+        
+        for shape in sorted_elements:
+            # 1. Текст
+            if hasattr(shape, "text") and shape.text.strip():
+                text_accumulator.append(shape.text.strip())
+            
+            # 2. Нативные Графики
+            if shape.has_chart:
+                # Вставляем сюда функцию extract_chart_data из прошлого ответа
+                group_content["content"].append({"type": "chart_data", "obj": shape})
+                
+            # 3. Нативные Таблицы
+            if shape.has_table:
+                # Вставляем сюда функцию extract_table_data
+                group_content["content"].append({"type": "table_data", "obj": shape})
+
+        group_content["raw_text"] = "\n".join(text_accumulator)
+        parsed_data.append(group_content)
+        
+    return parsed_data
+
+# ==========================================
+# 3. ПРИМЕР ИСПОЛЬЗОВАНИЯ
+# ==========================================
+
+def process_slide_hybrid(slide, image_path_of_slide):
+    """
+    Главная функция.
+    slide: объект слайда из python-pptx
+    image_path_of_slide: путь к JPG файлу этого слайда
+    """
+    grouper = VisualGrouper(slide, image_path_of_slide)
+    
+    # Получаем сгруппированные данные
+    groups, orphans = grouper.analyze()
+    
+    # Превращаем в JSON-структуру
+    structured_result = parse_visual_groups(groups)
+    
+    # Обрабатываем "сирот" (то, что не попало в зоны OCR - обычно мелкие подписи или фоновые тексты)
+    if orphans:
+        orphan_texts = [s.text.strip() for s in orphans if hasattr(s, "text") and s.text.strip()]
+        if orphan_texts:
+            structured_result.append({
+                "layout_type": "uncategorized",
+                "raw_text": "\n".join(orphan_texts),
+                "content": []
+            })
+            
+    return structured_result
+
+# Псевдокод запуска
+# prs = Presentation("test.pptx")
+# slide = prs.slides[0]
+# # Важно: у вас уже должна быть картинка слайда. 
+# # Обычно используют pdf2image, чтобы перегнать PPTX -> PDF -> JPG
+# result = process_slide_hybrid(slide, "slide_1.jpg")
+# print(result)
