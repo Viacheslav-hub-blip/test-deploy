@@ -1,43 +1,112 @@
-def get_vertical_overlap(shape1, shape2):
-    """Считает процент перекрытия по вертикали."""
-    top1, bot1 = shape1.top, shape1.top + shape1.height
-    top2, bot2 = shape2.top, shape2.top + shape2.height
+from pptx import Presentation
 
-    max_top = max(top1, top2)
-    min_bot = min(bot1, bot2)
+def get_shape_combinatorics(shape):
+    """Вспомогательная функция для получения координат"""
+    return {
+        'left': shape.left,
+        'top': shape.top,
+        'right': shape.left + shape.width,
+        'bottom': shape.top + shape.height,
+        'width': shape.width,
+        'height': shape.height,
+        'obj': shape
+    }
 
-    overlap = max(0, min_bot - max_top)
-    # Возвращаем true, если перекрытие больше 50% высоты самого маленького элемента
-    min_height = min(shape1.height, shape2.height)
-    if min_height == 0: return False
-    return (overlap / min_height) > 0.4  # Порог перекрытия 40%
+def sort_shapes_by_columns(shapes, slide_height):
+    """
+    Сортирует шейпы, определяя колонки.
+    Сначала читает Header (верх слайда), затем слева-направо по колонкам, 
+    а внутри колонок - сверху-вниз.
+    """
+    if not shapes:
+        return []
 
-def sort_shapes_smart(shapes):
-    # 1. Сортируем по Top
-    sorted_by_top = sorted(shapes, key=lambda x: x.top)
-    if not sorted_by_top: return []
-
-    rows = []
+    # 1. Разделяем на Header и Body
+    # Порог заголовка: 20% от высоты слайда (можно настроить)
+    header_threshold = slide_height * 0.20
     
-    while sorted_by_top:
-        current = sorted_by_top.pop(0)
-        row = [current]
-        
-        # Ищем всех "соседей", которые визуально находятся на одной линии
-        # т.е. имеют значительное вертикальное пересечение с current
-        remaining = []
-        for candidate in sorted_by_top:
-            if get_vertical_overlap(current, candidate):
-                row.append(candidate)
-            else:
-                remaining.append(candidate)
-        
-        # Обновляем список, убирая те, что попали в строку
-        sorted_by_top = remaining
-        
-        # Сортируем найденную строку слева направо
-        row.sort(key=lambda x: x.left)
-        rows.append(row)
+    headers = []
+    body_shapes = []
 
-    # Разворачиваем список списков в один плоский список
-    return [shape for row in rows for shape in row]
+    for shape in shapes:
+        if shape.top + shape.height < header_threshold:
+            headers.append(shape)
+        else:
+            body_shapes.append(shape)
+
+    # Сортируем заголовки классически (сверху-вниз, слева-направо)
+    sorted_headers = sorted(headers, key=lambda x: (x.top, x.left))
+
+    if not body_shapes:
+        return sorted_headers
+
+    # 2. Алгоритм группировки Body в колонки
+    # Создаем список колонок. Каждая колонка - это список шейпов.
+    columns = [] 
+    
+    # Сначала отсортируем body по левому краю, чтобы легче искать колонки
+    body_sorted_by_left = sorted(body_shapes, key=lambda x: x.left)
+
+    for shape in body_sorted_by_left:
+        s_coords = get_shape_combinatorics(shape)
+        
+        placed = False
+        # Пытаемся найти существующую колонку, с которой этот шейп пересекается по X
+        for col in columns:
+            # Берем "среднюю" ширину колонки или границы первого элемента колонки
+            # Для простоты проверяем пересечение с bounding box всей колонки
+            col_min_left = min(c.left for c in col)
+            col_max_right = max(c.left + c.width for c in col)
+            
+            # Проверяем горизонтальное пересечение (Overlap X)
+            # Если шейп пересекается с колонкой более чем на 30% своей ширины - это та же колонка
+            overlap_start = max(s_coords['left'], col_min_left)
+            overlap_end = min(s_coords['right'], col_max_right)
+            overlap_width = max(0, overlap_end - overlap_start)
+            
+            # Если перекрытие значительное (например, > 30% ширины шейпа)
+            if overlap_width > (s_coords['width'] * 0.3):
+                col.append(shape)
+                placed = True
+                break
+        
+        if not placed:
+            # Создаем новую колонку
+            columns.append([shape])
+
+    # 3. Финальная сборка
+    sorted_body = []
+    
+    # Сортируем сами колонки слева направо (по левому краю первого элемента или среднему)
+    columns.sort(key=lambda col: min(s.left for s in col))
+
+    for col in columns:
+        # Внутри колонки сортируем СТРОГО сверху вниз
+        # Тут можно добавить микро-логику для "одной строки", но обычно top достаточно
+        col.sort(key=lambda x: x.top)
+        sorted_body.extend(col)
+
+    return sorted_headers + sorted_body
+
+# --- Интеграция в твой код ---
+def parse_pptx_advanced(file_path):
+    prs = Presentation(file_path)
+    slides_content = []
+
+    for i, slide in enumerate(prs.slides):
+        slide_height = prs.slide_height
+        
+        # ! ВЫЗОВ НОВОЙ ФУНКЦИИ СОРТИРОВКИ !
+        sorted_shapes = sort_shapes_by_columns(list(slide.shapes), slide_height)
+        
+        slide_data = {"page": i + 1, "text": []}
+        
+        for shape in sorted_shapes:
+            if hasattr(shape, "text") and shape.text.strip():
+                # Добавляем координаты для отладки, чтобы видеть, как оно отсортировало
+                slide_data["text"].append(f"[{shape.left // 10000}:{shape.top // 10000}] {shape.text.strip()}")
+                
+            # ... тут твоя обработка таблиц и графиков ...
+            
+        slides_content.append(slide_data)
+    return slides_content
