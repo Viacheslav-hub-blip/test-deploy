@@ -1,0 +1,38 @@
+import os
+import win32com.client
+
+def pptx_to_images_win32(input_pptx, output_folder):
+    # COM требует полные (абсолютные) пути
+    input_path = os.path.abspath(input_pptx)
+    output_folder = os.path.abspath(output_folder)
+    
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Запускаем PowerPoint в фоновом режиме
+    powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+    # powerpoint.Visible = 1 # Раскомментируй, если хочешь видеть процесс
+    
+    try:
+        presentation = powerpoint.Presentations.Open(input_path, WithWindow=False)
+        
+        for i, slide in enumerate(presentation.Slides):
+            # Формируем имя файла: slide_1.jpg
+            image_path = os.path.join(output_folder, f"slide_{i+1}.jpg")
+            
+            # Export(Path, FilterName, ScaleWidth, ScaleHeight)
+            # FilterName="JPG" или "PNG"
+            # ScaleWidth/Height=0 означает оригинальный размер
+            slide.Export(image_path, "JPG", 0, 0)
+            print(f"Saved: {image_path}")
+            
+        presentation.Close()
+    except Exception as e:
+        print(f"Ошибка: {e}")
+    finally:
+        # Не закрываем сам PowerPoint Application, если он был открыт до нас,
+        # но в скрипте для сервера лучше закрывать: powerpoint.Quit()
+        powerpoint.Quit()
+
+# Запуск
+pptx_to_images_win32("presentation.pptx", "slides_images")
