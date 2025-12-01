@@ -1,7 +1,13 @@
+import json
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-def get_shape_combinatorics(shape):
-    """Вспомогательная функция для получения координат"""
+# ==========================================
+# 1. ЛОГИКА СОРТИРОВКИ (LAYOUT ANALYSIS)
+# ==========================================
+
+def get_shape_coords(shape):
+    """Возвращает координаты и размеры шейпа."""
     return {
         'left': shape.left,
         'top': shape.top,
@@ -12,101 +18,297 @@ def get_shape_combinatorics(shape):
         'obj': shape
     }
 
-def sort_shapes_by_columns(shapes, slide_height):
+def sort_shapes_by_layout(shapes, slide_height):
     """
-    Сортирует шейпы, определяя колонки.
-    Сначала читает Header (верх слайда), затем слева-направо по колонкам, 
-    а внутри колонок - сверху-вниз.
+    Сортирует элементы слайда:
+    1. Header (верхние 20%) - сортируется стандартно.
+    2. Body - группируется по колонкам (слева направо), внутри колонки - сверху вниз.
     """
     if not shapes:
         return []
 
-    # 1. Разделяем на Header и Body
-    # Порог заголовка: 20% от высоты слайда (можно настроить)
+    # Порог заголовка: 20% от высоты слайда
     header_threshold = slide_height * 0.20
     
     headers = []
     body_shapes = []
 
     for shape in shapes:
+        # Если шейп целиком в верхней зоне
         if shape.top + shape.height < header_threshold:
             headers.append(shape)
         else:
             body_shapes.append(shape)
 
-    # Сортируем заголовки классически (сверху-вниз, слева-направо)
+    # Заголовки: Сверху-вниз, слева-направо
     sorted_headers = sorted(headers, key=lambda x: (x.top, x.left))
 
     if not body_shapes:
         return sorted_headers
 
-    # 2. Алгоритм группировки Body в колонки
-    # Создаем список колонок. Каждая колонка - это список шейпов.
+    # --- Алгоритм колонок для Body ---
     columns = [] 
     
-    # Сначала отсортируем body по левому краю, чтобы легче искать колонки
+    # Сортируем body по левому краю для начала перебора
     body_sorted_by_left = sorted(body_shapes, key=lambda x: x.left)
 
     for shape in body_sorted_by_left:
-        s_coords = get_shape_combinatorics(shape)
-        
+        s_coords = get_shape_coords(shape)
         placed = False
-        # Пытаемся найти существующую колонку, с которой этот шейп пересекается по X
+        
         for col in columns:
-            # Берем "среднюю" ширину колонки или границы первого элемента колонки
-            # Для простоты проверяем пересечение с bounding box всей колонки
+            # Границы текущей колонки
             col_min_left = min(c.left for c in col)
             col_max_right = max(c.left + c.width for c in col)
             
-            # Проверяем горизонтальное пересечение (Overlap X)
-            # Если шейп пересекается с колонкой более чем на 30% своей ширины - это та же колонка
+            # Проверяем пересечение по оси X
             overlap_start = max(s_coords['left'], col_min_left)
             overlap_end = min(s_coords['right'], col_max_right)
             overlap_width = max(0, overlap_end - overlap_start)
             
-            # Если перекрытие значительное (например, > 30% ширины шейпа)
+            # Если пересечение больше 30% ширины текущего шейпа -> это та же колонка
             if overlap_width > (s_coords['width'] * 0.3):
                 col.append(shape)
                 placed = True
                 break
         
         if not placed:
-            # Создаем новую колонку
             columns.append([shape])
 
-    # 3. Финальная сборка
-    sorted_body = []
-    
-    # Сортируем сами колонки слева направо (по левому краю первого элемента или среднему)
+    # Сортируем сами колонки слева направо
     columns.sort(key=lambda col: min(s.left for s in col))
 
+    sorted_body = []
     for col in columns:
-        # Внутри колонки сортируем СТРОГО сверху вниз
-        # Тут можно добавить микро-логику для "одной строки", но обычно top достаточно
+        # Внутри колонки строго сверху вниз
         col.sort(key=lambda x: x.top)
         sorted_body.extend(col)
 
     return sorted_headers + sorted_body
 
-# --- Интеграция в твой код ---
-def parse_pptx_advanced(file_path):
+
+# ==========================================
+# 2. ЛОГИКА ГРУППИРОВКИ (CONTEXT LINKING)
+# ==========================================
+
+def is_anchor(shape):
+    """Определяем, является ли объект 'Родителем' (Таблица, График)."""
+    if shape.has_table or shape.has_chart:
+        return True
+    return False
+
+def check_proximity(anchor, candidate, max_gap_emu=457200):
+    """
+    Проверяет, является ли candidate подписью ПОД anchor.
+    max_gap_emu: ~1.27 см.
+    """
+    # 1. Вертикаль: кандидат должен быть ниже якоря
+    gap = candidate.top - (anchor.top + anchor.height)
+    
+    # Допускаем небольшое наложение (если текст чуть наехал на рамку графика)
+    if gap < - (anchor.height * 0.1): 
+        return False # Слишком высоко (внутри или выше)
+    if gap > max_gap_emu:
+        return False # Слишком далеко внизу
+
+    # 2. Горизонталь: должны пересекаться по ширине
+    anchor_right = anchor.left + anchor.width
+    cand_right = candidate.left + candidate.width
+
+    overlap_start = max(anchor.left, candidate.left)
+    overlap_end = min(anchor_right, cand_right)
+    
+    if overlap_end > overlap_start:
+        return True 
+    
+    return False
+
+def group_content_with_comments(sorted_shapes):
+    """
+    Объединяет графики/таблицы с текстом, идущим сразу под ними.
+    Возвращает структуру для финального парсинга.
+    """
+    structured_content = []
+    last_anchor_idx = -1 
+    
+    for shape in sorted_shapes:
+        # --- ЯКОРЬ (График/Таблица) ---
+        if is_anchor(shape):
+            item_data = {
+                "type": "chart" if shape.has_chart else "table",
+                "obj": shape,
+                "comment": None
+            }
+            structured_content.append(item_data)
+            last_anchor_idx = len(structured_content) - 1
+            
+        # --- ТЕКСТ ---
+        elif hasattr(shape, "text") and shape.text.strip():
+            text_content = shape.text.strip()
+            merged = False
+            
+            # Пытаемся приклеить к предыдущему якорю
+            if last_anchor_idx != -1:
+                anchor_data = structured_content[last_anchor_idx]
+                if check_proximity(anchor_data["obj"], shape):
+                    # Нашли описание!
+                    current_comment = anchor_data["comment"] or ""
+                    anchor_data["comment"] = (current_comment + "\n" + text_content).strip()
+                    merged = True
+            
+            if not merged:
+                # Обычный текст
+                structured_content.append({
+                    "type": "text",
+                    "text": text_content
+                })
+                # Сбрасываем якорь, т.к. поток прерван обычным текстом
+                last_anchor_idx = -1
+        
+        # --- КАРТИНКИ И ПР. ---
+        else:
+             # Можно добавить обработку картинок здесь
+             pass
+
+    return structured_content
+
+
+# ==========================================
+# 3. ЛОГИКА ИЗВЛЕЧЕНИЯ ДАННЫХ (EXTRACTION)
+# ==========================================
+
+def extract_chart_data(shape):
+    """Извлекает данные из нативного графика PPTX."""
+    try:
+        chart = shape.chart
+        chart_title = "Untitled Chart"
+        try:
+            if chart.has_title:
+                chart_title = chart.chart_title.text_frame.text.strip()
+        except: pass
+
+        chart_info = {
+            "title": chart_title,
+            "series": []
+        }
+
+        # 1. Попытка достать категории (Ось X)
+        categories = []
+        try:
+            plots = chart.plots
+            if len(plots) > 0:
+                # Конвертируем категории в строки
+                categories = [str(c.label) for c in plots[0].categories]
+        except: pass
+
+        # 2. Итерация по сериям
+        for series in chart.series:
+            series_name = series.name if series.name else "Unnamed Series"
+            values = list(series.values)
+
+            series_data = {
+                "legend": series_name,
+                "values": values
+            }
+
+            # Если удалось достать категории, делаем маппинг
+            if categories and len(categories) == len(values):
+                # Создаем словарь {"2023": 100, "2024": 120}
+                series_data["mapped_data"] = dict(zip(categories, values))
+            
+            chart_info["series"].append(series_data)
+        
+        return chart_info
+
+    except Exception as e:
+        return {"error": f"Failed to parse chart: {str(e)}"}
+
+def extract_table_data(shape):
+    """Извлекает текст из таблицы."""
+    table_data = []
+    if not shape.has_table:
+        return []
+        
+    for row in shape.table.rows:
+        # replace \n на пробел, чтобы не ломать CSV/JSON структуру
+        row_data = [cell.text_frame.text.strip().replace('\n', ' ') for cell in row.cells]
+        table_data.append(row_data)
+    return table_data
+
+
+# ==========================================
+# 4. ГЛАВНЫЙ ПАЙПЛАЙН
+# ==========================================
+
+def process_presentation(file_path):
     prs = Presentation(file_path)
-    slides_content = []
+    final_output = []
 
     for i, slide in enumerate(prs.slides):
-        slide_height = prs.slide_height
+        print(f"Processing Slide {i+1}...")
         
-        # ! ВЫЗОВ НОВОЙ ФУНКЦИИ СОРТИРОВКИ !
-        sorted_shapes = sort_shapes_by_columns(list(slide.shapes), slide_height)
+        # 1. Сортировка с учетом колонок
+        sorted_shapes = sort_shapes_by_layout(list(slide.shapes), prs.slide_height)
         
-        slide_data = {"page": i + 1, "text": []}
+        # 2. Группировка комментариев
+        grouped_elements = group_content_with_comments(sorted_shapes)
         
-        for shape in sorted_shapes:
-            if hasattr(shape, "text") and shape.text.strip():
-                # Добавляем координаты для отладки, чтобы видеть, как оно отсортировало
-                slide_data["text"].append(f"[{shape.left // 10000}:{shape.top // 10000}] {shape.text.strip()}")
-                
-            # ... тут твоя обработка таблиц и графиков ...
+        slide_result = {
+            "slide_number": i + 1,
+            "elements": []
+        }
+
+        # 3. Финальный парсинг
+        for item in grouped_elements:
+            element_out = {}
             
-        slides_content.append(slide_data)
-    return slides_content
+            if item["type"] == "text":
+                element_out = {
+                    "category": "Text",
+                    "content": item["text"]
+                }
+            
+            elif item["type"] == "chart":
+                chart_data = extract_chart_data(item["obj"])
+                element_out = {
+                    "category": "Chart",
+                    "data": chart_data,
+                    "analysis_comment": item["comment"] # <-- ТОТ САМЫЙ КОММЕНТАРИЙ
+                }
+
+            elif item["type"] == "table":
+                table_data = extract_table_data(item["obj"])
+                element_out = {
+                    "category": "Table",
+                    "data": table_data,
+                    "analysis_comment": item["comment"] # <-- ТОТ САМЫЙ КОММЕНТАРИЙ
+                }
+            
+            if element_out:
+                slide_result["elements"].append(element_out)
+
+        final_output.append(slide_result)
+
+    return final_output
+
+# ==========================================
+# ЗАПУСК
+# ==========================================
+
+if __name__ == "__main__":
+    # Укажи путь к файлу
+    FILE_PATH = "my_presentation.pptx" 
+    
+    try:
+        data = process_presentation(FILE_PATH)
+        
+        # Вывод результата в JSON
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        
+        # Сохранение в файл
+        with open("output_llm_context.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            
+    except Exception as e:
+        print(f"Ошибка при обработке: {e}")
+        # Если файла нет, скрипт упадет, но код рабочий
