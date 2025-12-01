@@ -1,0 +1,43 @@
+def get_vertical_overlap(shape1, shape2):
+    """Считает процент перекрытия по вертикали."""
+    top1, bot1 = shape1.top, shape1.top + shape1.height
+    top2, bot2 = shape2.top, shape2.top + shape2.height
+
+    max_top = max(top1, top2)
+    min_bot = min(bot1, bot2)
+
+    overlap = max(0, min_bot - max_top)
+    # Возвращаем true, если перекрытие больше 50% высоты самого маленького элемента
+    min_height = min(shape1.height, shape2.height)
+    if min_height == 0: return False
+    return (overlap / min_height) > 0.4  # Порог перекрытия 40%
+
+def sort_shapes_smart(shapes):
+    # 1. Сортируем по Top
+    sorted_by_top = sorted(shapes, key=lambda x: x.top)
+    if not sorted_by_top: return []
+
+    rows = []
+    
+    while sorted_by_top:
+        current = sorted_by_top.pop(0)
+        row = [current]
+        
+        # Ищем всех "соседей", которые визуально находятся на одной линии
+        # т.е. имеют значительное вертикальное пересечение с current
+        remaining = []
+        for candidate in sorted_by_top:
+            if get_vertical_overlap(current, candidate):
+                row.append(candidate)
+            else:
+                remaining.append(candidate)
+        
+        # Обновляем список, убирая те, что попали в строку
+        sorted_by_top = remaining
+        
+        # Сортируем найденную строку слева направо
+        row.sort(key=lambda x: x.left)
+        rows.append(row)
+
+    # Разворачиваем список списков в один плоский список
+    return [shape for row in rows for shape in row]
