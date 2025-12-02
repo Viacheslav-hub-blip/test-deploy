@@ -6,9 +6,81 @@ import win32com.client
 from pptx import Presentation
 
 # ==========================================
-# 1. ГЕНЕРАТОР КАРТИНОК
+# ЧАСТЬ 1: ФУНКЦИИ ГЛУБОКОГО ПАРСИНГА ДАННЫХ
 # ==========================================
+
+def extract_chart_native(shape):
+    """
+    Извлекает данные из объекта Chart (диаграмма).
+    Возвращает структуру с заголовком и сериями данных (категория -> значение).
+    """
+    try:
+        chart = shape.chart
+        title = ""
+        try:
+            if chart.has_title:
+                title = chart.chart_title.text_frame.text.strip()
+        except: pass
+
+        chart_data = {
+            "title": title,
+            "series": []
+        }
+
+        # 1. Попытка достать категории (Ось X: Январь, Февраль...)
+        categories = []
+        try:
+            plots = chart.plots
+            if len(plots) > 0:
+                # categories может быть сложным объектом, приводим к строкам
+                categories = [str(c.label) for c in plots[0].categories]
+        except: pass
+
+        # 2. Перебор серий данных (Выручка, Прибыль...)
+        for series in chart.series:
+            series_name = series.name if series.name else "Series"
+            values = list(series.values) # Конвертируем tuple в list
+
+            series_obj = {
+                "legend": series_name,
+                "values": values
+            }
+
+            # Склеиваем категории и значения в словарь для LLM
+            # Пример: {"Q1": 100, "Q2": 200}
+            if categories and len(categories) == len(values):
+                series_obj["mapped_data"] = dict(zip(categories, values))
+            
+            chart_data["series"].append(series_obj)
+            
+        return chart_data
+
+    except Exception as e:
+        return {"error": f"Chart parse error: {e}"}
+
+def extract_table_native(shape):
+    """
+    Извлекает текст из таблицы построчно.
+    """
+    table_data = []
+    try:
+        if not shape.has_table: return []
+        
+        for row in shape.table.rows:
+            # Очищаем от лишних переносов строк внутри ячейки
+            row_text = [cell.text_frame.text.strip().replace('\n', ' ') for cell in row.cells]
+            table_data.append(row_text)
+    except: pass
+    return table_data
+
+# ==========================================
+# ЧАСТЬ 2: ГЕНЕРАЦИЯ КАРТИНОК (WINDOWS)
+# ==========================================
+
 def export_slides_to_images(pptx_path, output_folder):
+    """
+    Использует установленный MS PowerPoint для качественного рендеринга слайдов в JPG.
+    """
     abs_pptx = os.path.abspath(pptx_path)
     abs_output = os.path.abspath(output_folder)
     
@@ -16,48 +88,55 @@ def export_slides_to_images(pptx_path, output_folder):
         os.makedirs(abs_output)
 
     try:
+        print(f"   [System] Запуск PowerPoint для рендеринга...")
         powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+        # powerpoint.Visible = 1 # Раскомментировать для отладки
+        
         pres = powerpoint.Presentations.Open(abs_pptx, WithWindow=False)
-        image_paths = []
+        paths = []
+        
         for i, slide in enumerate(pres.Slides):
-            filename = f"slide_{i+1}.jpg"
-            save_path = os.path.join(abs_output, filename)
-            if os.path.exists(save_path): os.remove(save_path)
-            slide.Export(save_path, "JPG", 0, 0)
-            image_paths.append(save_path)
+            fname = os.path.join(abs_output, f"slide_{i+1}.jpg")
+            # Удаляем старый файл во избежание конфликтов
+            if os.path.exists(fname): os.remove(fname)
+            
+            # Export(Path, FilterName, ScaleW, ScaleH). 0 = Original Size
+            slide.Export(fname, "JPG", 0, 0)
+            paths.append(fname)
+            
         pres.Close()
-        return image_paths
+        return paths
     except Exception as e:
-        print(f"Ошибка экспорта (проверьте, закрыт ли файл в PowerPoint): {e}")
+        print(f"   [Error] Ошибка PowerPoint: {e}")
         return []
     finally:
-        try:
+        try: 
             if 'pres' in locals(): del pres
         except: pass
 
 # ==========================================
-# 2. УЛУЧШЕННЫЙ АЛГОРИТМ CV (CANNY EDGE)
+# ЧАСТЬ 3: VISUAL GROUPER (OPENCV LOGIC)
 # ==========================================
+
 class VisualGrouperClassical:
     def __init__(self, slide, image_path, prs):
         self.slide = slide
         self.img = cv2.imread(image_path)
         
         if self.img is None:
-            raise ValueError(f"CRITICAL: Не удалось прочитать {image_path}")
-            
+            raise ValueError(f"Не найдена картинка: {image_path}")
+
         self.h, self.w = self.img.shape[:2]
         
-        # Получаем размеры слайда (с проверкой на 0)
+        # Получаем размеры слайда для расчета масштаба
         sw = prs.slide_width if prs.slide_width > 0 else 9144000
         sh = prs.slide_height if prs.slide_height > 0 else 6858000
         
         self.scale_x = self.w / sw
         self.scale_y = self.h / sh
-        
-        print(f"   [Debug] Image: {self.w}x{self.h} px | PPTX: {sw}x{sh} EMU | Scale: {self.scale_x:.4f}")
 
     def emu_to_pixels(self, shape):
+        """Конвертирует координаты PPTX (EMU) в Пиксели изображения."""
         x = int(shape.left * self.scale_x)
         y = int(shape.top * self.scale_y)
         w = int(shape.width * self.scale_x)
@@ -66,41 +145,39 @@ class VisualGrouperClassical:
 
     def detect_layout_blocks(self):
         """
-        Использует Canny Edge Detection + Dilation.
-        Работает лучше на цветных фонах.
+        Находит визуальные блоки (Layout) с помощью морфологии.
         """
-        # 1. Ч/Б
+        # 1. Перевод в оттенки серого
         gray = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
         
-        # 2. Поиск границ (Canny) вместо Threshold
-        # Это найдет любые контрастные переходы (текст, рамки таблиц)
+        # 2. Поиск границ (Canny работает лучше на сложных фонах, чем Threshold)
         edges = cv2.Canny(gray, 50, 150)
+
+        # 3. НАСТРОЙКА ЯДРА (Самое важное для колонок)
+        # Ширина 10: Узкая, чтобы не склеивать соседние колонки.
+        # Высота 100: Длинная, чтобы склеить График + Заголовок + Описание под ним.
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 100))
         
-        # 3. Жирное размытие (Dilation)
-        # Увеличил ядро, чтобы наверняка склеить элементы
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 30))
+        # 4. Размытие (склеивание)
         dilated = cv2.dilate(edges, kernel, iterations=3)
         
-        # 4. Поиск контуров
+        # 5. Поиск контуров получившихся пятен
         contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         blocks = []
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
             
-            # Фильтры
-            if w < 30 or h < 30: continue # Слишком мелко
-            if w > self.w * 0.98 and h > self.h * 0.98: continue # Рамка во весь слайд
+            # Фильтр визуального мусора (слишком мелкие пятна или рамка во весь слайд)
+            if w < 30 or h < 30: continue
+            if w > self.w * 0.98 and h > self.h * 0.98: continue
             
-            blocks.append({
-                "bbox": [x, y, x + w, y + h],
-                "elements": []
-            })
-            
-        print(f"   [Debug] Найдено визуальных блоков (Green): {len(blocks)}")
+            blocks.append({"bbox": [x, y, x + w, y + h], "elements": []})
+        
         return blocks
 
     def get_intersection(self, boxA, boxB):
+        """Считает процент вхождения boxA (объект) в boxB (блок)."""
         xA = max(boxA[0], boxB[0])
         yA = max(boxA[1], boxB[1])
         xB = min(boxA[2], boxB[2])
@@ -109,129 +186,154 @@ class VisualGrouperClassical:
         interArea = max(0, xB - xA) * max(0, yB - yA)
         if interArea == 0: return 0
         
-        # Считаем пересечение относительно объекта PPTX
-        # (Какая часть объекта попала в блок)
         boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
         if boxAArea == 0: return 0
         
         return interArea / boxAArea
 
-    def group_elements(self, debug_filename=None):
+    def group_elements(self, debug_path=None):
         blocks = self.detect_layout_blocks()
         orphans = []
 
-        # --- ОТЛАДКА: Рисуем картинку ---
-        debug_img = self.img.copy() if debug_filename else None
-        
-        # 1. Рисуем найденные блоки (ЗЕЛЕНЫЕ)
+        # --- ОТЛАДКА: Рисуем блоки ---
+        debug_img = self.img.copy() if debug_path else None
         if debug_img is not None:
-            for b in blocks:
-                bx1, by1, bx2, by2 = b['bbox']
-                cv2.rectangle(debug_img, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
+             # Рисуем найденные ЗЕЛЕНЫЕ зоны (Layout)
+             for b in blocks:
+                 cv2.rectangle(debug_img, (b['bbox'][0], b['bbox'][1]), (b['bbox'][2], b['bbox'][3]), (0, 255, 0), 2)
 
-        count_matched = 0
-        
-        # 2. Матчинг
+        # Перебираем все объекты на слайде
         for shape in self.slide.shapes:
             if not hasattr(shape, "left"): continue
             
             shape_rect = self.emu_to_pixels(shape)
+            obj_w = shape_rect[2] - shape_rect[0]
+            obj_h = shape_rect[3] - shape_rect[1]
+
+            # --- ФИЛЬТРАЦИЯ МЕЛКИХ ОБЪЕКТОВ ---
+            # Игнорируем объекты меньше 30x30 пикселей (иконки, номера страниц)
+            if obj_w < 30 or obj_h < 30:
+                continue 
             
-            # ОТЛАДКА: Рисуем объекты PPTX (КРАСНЫЕ)
+            # Рисуем КРАСНЫЕ рамки (только те объекты, что прошли фильтр)
             if debug_img is not None:
-                sx1, sy1, sx2, sy2 = shape_rect
-                cv2.rectangle(debug_img, (sx1, sy1), (sx2, sy2), (0, 0, 255), 2)
-            
+                cv2.rectangle(debug_img, (shape_rect[0], shape_rect[1]), (shape_rect[2], shape_rect[3]), (0, 0, 255), 2)
+
+            # --- МАТЧИНГ (Привязка к блоку) ---
             best_score = 0
-            best_block_idx = -1
-            
+            best_idx = -1
             for i, block in enumerate(blocks):
                 score = self.get_intersection(shape_rect, block["bbox"])
-                # Снизил порог до 0.2 (20% пересечения достаточно)
-                if score > 0.2 and score > best_score:
+                # Если объект пересекается с блоком хотя бы на 20%
+                if score > 0.2 and score > best_score: 
                     best_score = score
-                    best_block_idx = i
+                    best_idx = i
             
-            if best_block_idx != -1:
-                blocks[best_block_idx]["elements"].append(shape)
-                count_matched += 1
+            if best_idx != -1:
+                blocks[best_idx]["elements"].append(shape)
             else:
                 orphans.append(shape)
 
-        if debug_img is not None:
-            cv2.imwrite(debug_filename, debug_img)
-            print(f"   [Debug] Saved visualization to {debug_filename}")
-            
-        print(f"   [Debug] Matched: {count_matched} | Orphans: {len(orphans)}")
+        # Сохраняем картинку отладки
+        if debug_img is not None: cv2.imwrite(debug_path, debug_img)
         
+        # Сортируем блоки визуально сверху-вниз
         blocks.sort(key=lambda b: b["bbox"][1])
-        return blocks, orphans
+        return blocks
 
 # ==========================================
-# 3. ЗАПУСК
+# ЧАСТЬ 4: ГЛАВНЫЙ ЦИКЛ (ЗАПУСК)
 # ==========================================
+
 if __name__ == "__main__":
-    PPTX_FILE = "test.pptx"
-    IMG_FOLDER = "temp_images"
+    # --- НАСТРОЙКИ ---
+    PPTX_FILE = "test.pptx"      # Имя вашего файла
+    IMG_FOLDER = "temp_images"   # Папка для временных картинок
+    JSON_OUTPUT = "final_output.json"
     
+    # 1. Проверка наличия файла
     if not os.path.exists(PPTX_FILE):
-        print(f"Файл {PPTX_FILE} не найден!")
+        print(f"[Error] Файл {PPTX_FILE} не найден. Положите его рядом со скриптом.")
         exit()
 
-    print("--- Start ---")
+    # 2. Генерация картинок
+    print("--- Шаг 1: Рендеринг слайдов в картинки ---")
     image_paths = export_slides_to_images(PPTX_FILE, IMG_FOLDER)
     
     if not image_paths:
-        print("Картинки не созданы.")
+        print("[Error] Не удалось создать картинки. Проверьте установку PowerPoint.")
         exit()
 
+    # 3. Анализ и Парсинг
+    print("--- Шаг 2: Анализ структуры и извлечение данных ---")
     prs = Presentation(PPTX_FILE)
     full_result = []
 
     for i, slide in enumerate(prs.slides):
-        print(f"\nProcessing Slide {i+1}...")
-        img_path = image_paths[i]
+        print(f"   Обработка слайда {i+1}...")
         
-        grouper = VisualGrouperClassical(slide, img_path, prs)
+        # Инициализируем CV-группировщик
+        grouper = VisualGrouperClassical(slide, image_paths[i], prs)
         
-        # Включаем сохранение отладочной картинки!
-        blocks, orphans = grouper.group_elements(debug_filename=f"debug_slide_{i+1}.jpg")
+        # Запускаем группировку + сохраняем debug картинку
+        blocks = grouper.group_elements(debug_path=f"debug_slide_{i+1}.jpg")
         
-        slide_data = {"slide_number": i+1, "groups": []}
+        slide_output = {
+            "slide_number": i + 1,
+            "layout_groups": []
+        }
         
+        # 4. Формирование финального JSON для каждого блока
         for block in blocks:
+            # Пропускаем блоки, куда не попало ни одного полезного объекта
             if not block["elements"]: continue
             
-            # Сбор данных
+            # Сортируем элементы внутри блока (сверху-вниз)
             elements = sorted(block["elements"], key=lambda s: s.top)
-            texts = []
-            has_chart = False
-            has_table = False
+            
+            group_data = {
+                "type": "unknown",       # Определим тип контента ниже
+                "combined_text": "",     # Весь текст блока
+                "charts_data": [],       # JSON данные графиков
+                "tables_data": []        # Массивы таблиц
+            }
+            
+            text_accumulator = []
             
             for el in elements:
+                # А) Текст
                 if hasattr(el, "text") and el.text.strip():
-                    texts.append(el.text.strip())
-                if el.has_chart: has_chart = True
-                if el.has_table: has_table = True
+                    text_accumulator.append(el.text.strip())
+                
+                # Б) График (Native)
+                if el.has_chart:
+                    chart_res = extract_chart_native(el)
+                    group_data["charts_data"].append(chart_res)
+                    
+                # В) Таблица (Native)
+                if el.has_table:
+                    table_res = extract_table_native(el)
+                    group_data["tables_data"].append(table_res)
 
-            group_type = "text"
-            if has_chart: group_type = "chart_group"
-            elif has_table: group_type = "table_group"
+            # Логика определения типа блока для LLM
+            if group_data["charts_data"]:
+                group_data["type"] = "chart_analysis" # Блок с графиком
+            elif group_data["tables_data"]:
+                group_data["type"] = "table_analysis" # Блок с таблицей
+            elif text_accumulator:
+                group_data["type"] = "text_block"     # Просто текст
+            else:
+                continue 
 
-            slide_data["groups"].append({
-                "type": group_type,
-                "text": "\n".join(texts),
-                "items_count": len(elements)
-            })
+            group_data["combined_text"] = "\n".join(text_accumulator)
+            slide_output["layout_groups"].append(group_data)
             
-        full_result.append(slide_data)
-    
-    print("\n--- RESULT SUMMARY ---")
-    # Печатаем сокращенно, чтобы видеть структуру
-    for slide in full_result:
-        print(f"Slide {slide['slide_number']}: {len(slide['groups'])} groups found.")
-        for g in slide['groups']:
-            print(f"  - [{g['type']}] Text len: {len(g['text'])}")
+        full_result.append(slide_output)
 
-    with open("result.json", "w", encoding="utf-8") as f:
+    # 5. Сохранение результата
+    with open(JSON_OUTPUT, "w", encoding="utf-8") as f:
         json.dump(full_result, f, indent=2, ensure_ascii=False)
+        
+    print(f"\n--- Готово! ---")
+    print(f"1. JSON сохранен в: {JSON_OUTPUT}")
+    print(f"2. Проверьте картинки debug_slide_X.jpg для оценки качества группировки.")
