@@ -1,20 +1,18 @@
-import cv2
-import numpy as np
-from pptx import Presentation
-
 class VisualGrouperClassical:
-    def __init__(self, slide, image_path):
+    # ### ИСПРАВЛЕНО: Добавили аргумент `prs` (объект презентации)
+    def __init__(self, slide, image_path, prs):
         self.slide = slide
-        # Загружаем изображение слайда
         self.img = cv2.imread(image_path)
+        
         if self.img is None:
-            raise ValueError("Не удалось открыть изображение")
+            raise ValueError(f"Не удалось прочитать картинку: {image_path}")
             
         self.h, self.w = self.img.shape[:2]
         
-        # Коэффициенты для перевода координат PPTX (EMU) -> Pixels
-        self.scale_x = self.w / slide.parent.slide_width
-        self.scale_y = self.h / slide.parent.slide_height
+        # ### ИСПРАВЛЕНО: Берем размеры из переданного объекта prs
+        # prs.slide_width и prs.slide_height хранят размеры в EMU
+        self.scale_x = self.w / prs.slide_width
+        self.scale_y = self.h / prs.slide_height
 
     def emu_to_pixels(self, shape):
         x = int(shape.left * self.scale_x)
@@ -24,68 +22,46 @@ class VisualGrouperClassical:
         return [x, y, x + w, y + h]
 
     def detect_layout_blocks(self):
-        """
-        Алгоритм поиска блоков с помощью морфологии.
-        Не использует нейросети!
-        """
-        # 1. Ч/Б и инверсия (чтобы текст стал белым на черном)
         gray = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
-        
-        # Бинаризация (отсекаем шум)
-        # THRESH_OTSU сам подбирает порог яркости
         _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-        # 2. МОРФОЛОГИЯ (Самый важный шаг)
-        # Мы создаем ядро - "кисть", которой будем размазывать пиксели.
-        # (20, 15) означает: размазывать сильно по ширине (20px) и чуть меньше по высоте (15px).
-        # Это позволяет склеить слова в строку, а строки в параграф.
-        # Если графики и подписи далеко друг от друга, увеличьте эти числа (например, 30, 30).
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 25))
-        
-        # Dilation - расширение белых областей
+        # Настройка ядра: (30, 25) - можно менять
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 25))
         dilated = cv2.dilate(thresh, kernel, iterations=3)
 
-        # 3. Поиск контуров (границ получившихся пятен)
         contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         blocks = []
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
-            
-            # Фильтрация мусора:
-            # Игнорируем слишком мелкие пятна (шум)
             if w < 50 or h < 50: continue
-            
-            # Игнорируем гигантские пятна (например, рамку слайда, если она есть)
-            if w > self.w * 0.9 and h > self.h * 0.9: continue
+            if w > self.w * 0.95 and h > self.h * 0.95: continue
             
             blocks.append({
-                "bbox": [x, y, x + w, y + h], # [x1, y1, x2, y2]
+                "bbox": [x, y, x + w, y + h],
                 "elements": []
             })
             
         return blocks
 
     def get_intersection(self, boxA, boxB):
-        # Вычисление площади пересечения
         xA = max(boxA[0], boxB[0])
         yA = max(boxA[1], boxB[1])
         xB = min(boxA[2], boxB[2])
         yB = min(boxA[3], boxB[3])
-
+        
         interArea = max(0, xB - xA) * max(0, yB - yA)
         if interArea == 0: return 0
         
-        # Площадь объекта PPTX
         boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
-        return interArea / boxAArea # Какая часть объекта попала в блок
+        if boxAArea == 0: return 0
+        
+        return interArea / boxAArea
 
     def group_elements(self):
-        # 1. Получаем визуальные блоки
         blocks = self.detect_layout_blocks()
-        orphans = [] # Элементы, не попавшие ни в один блок
+        orphans = []
 
-        # 2. Раскидываем объекты PPTX по найденным блокам
         for shape in self.slide.shapes:
             if not hasattr(shape, "left"): continue
             
@@ -96,8 +72,6 @@ class VisualGrouperClassical:
             
             for i, block in enumerate(blocks):
                 score = self.get_intersection(shape_rect, block["bbox"])
-                
-                # Если объект пересекается с блоком хотя бы на 30%
                 if score > 0.3 and score > best_score:
                     best_score = score
                     best_block_idx = i
@@ -107,59 +81,70 @@ class VisualGrouperClassical:
             else:
                 orphans.append(shape)
 
-        # Сортируем блоки сверху-вниз для правильного чтения
         blocks.sort(key=lambda b: b["bbox"][1])
-        
         return blocks, orphans
 
-# ================================
-# ПРИМЕР ИСПОЛЬЗОВАНИЯ В ПАЙПЛАЙНЕ
-# ================================
+# ==========================================
+# 3. ЗАПУСК
+# ==========================================
+if __name__ == "__main__":
+    PPTX_FILE = "test.pptx"
+    IMG_FOLDER = "temp_images"
+    
+    if not os.path.exists(PPTX_FILE):
+        print(f"Файл {PPTX_FILE} не найден!")
+        exit()
 
-def parse_slide_offline(slide, image_path):
-    grouper = VisualGrouperClassical(slide, image_path)
+    print("1. Генерация картинок...")
+    image_paths = export_slides_to_images(PPTX_FILE, IMG_FOLDER)
     
-    # Получаем сгруппированные данные
-    blocks, orphans = grouper.group_elements()
+    if not image_paths:
+        print("Ошибка генерации картинок.")
+        exit()
+
+    print("2. Анализ...")
+    # Создаем объект презентации
+    prs = Presentation(PPTX_FILE)
     
-    slide_data = []
-    
-    for block in blocks:
-        if not block["elements"]: continue
+    full_result = []
+
+    for i, slide in enumerate(prs.slides):
+        print(f"--- Слайд {i+1} ---")
+        img_path = image_paths[i]
         
-        # Сортируем элементы внутри блока сверху-вниз
-        elements = sorted(block["elements"], key=lambda s: s.top)
+        # ### ИСПРАВЛЕНО: Передаем `prs` третьим аргументом
+        grouper = VisualGrouperClassical(slide, img_path, prs)
         
-        # Определяем тип блока по его содержимому
-        block_type = "text_block"
-        content_items = []
-        full_text = []
+        blocks, orphans = grouper.group_elements()
         
-        for el in elements:
-            # Текст
-            if hasattr(el, "text") and el.text.strip():
-                text = el.text.strip()
-                full_text.append(text)
-                content_items.append({"type": "text", "value": text})
+        # ... дальнейший код формирования JSON (как в прошлом примере) ...
+        slide_data = {"slide_number": i+1, "groups": []}
+        
+        for block in blocks:
+            if not block["elements"]: continue
             
-            # Если в блоке есть график - значит это блок графика
-            if el.has_chart:
-                block_type = "chart_block"
-                # Тут ваш код extraction: extract_chart_data(el)
-                content_items.append({"type": "chart", "obj": el})
-                
-            # Если таблица
-            if el.has_table:
-                block_type = "table_block"
-                # Тут ваш код extraction: extract_table_data(el)
-                content_items.append({"type": "table", "obj": el})
-        
-        # Формируем результат для LLM
-        if content_items:
-            slide_data.append({
-                "type": block_type,
-                "combined_text": "\n".join(full_text), # Весь текст блока (включая подписи!)
-                "items": content_items
-            })
+            elements = sorted(block["elements"], key=lambda s: s.top)
             
-    return slide_data
+            group_obj = {
+                "type": "content_block",
+                "text_content": "",
+                "data_objects": []
+            }
+            texts = []
+            
+            for el in elements:
+                if hasattr(el, "text") and el.text.strip():
+                    texts.append(el.text.strip())
+                if el.has_chart:
+                    group_obj["type"] = "chart_group"
+                    group_obj["data_objects"].append({"info": "Chart found"})
+                if el.has_table:
+                    group_obj["type"] = "table_group"
+                    group_obj["data_objects"].append({"info": "Table found"})
+
+            group_obj["text_content"] = "\n".join(texts)
+            slide_data["groups"].append(group_obj)
+            
+        full_result.append(slide_data)
+
+    print(json.dumps(full_result, indent=2, ensure_ascii=False))
