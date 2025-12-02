@@ -1,3 +1,46 @@
+import os
+import cv2
+import json
+import numpy as np
+import win32com.client
+from pptx import Presentation
+
+# ==========================================
+# 1. ГЕНЕРАТОР КАРТИНОК (Оставляем как было)
+# ==========================================
+def export_slides_to_images(pptx_path, output_folder):
+    abs_pptx = os.path.abspath(pptx_path)
+    abs_output = os.path.abspath(output_folder)
+    
+    if not os.path.exists(abs_output):
+        os.makedirs(abs_output)
+
+    try:
+        powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+        # powerpoint.Visible = 1 
+        
+        pres = powerpoint.Presentations.Open(abs_pptx, WithWindow=False)
+        image_paths = []
+        for i, slide in enumerate(pres.Slides):
+            filename = f"slide_{i+1}.jpg"
+            save_path = os.path.join(abs_output, filename)
+            if os.path.exists(save_path): os.remove(save_path)
+            slide.Export(save_path, "JPG", 0, 0)
+            image_paths.append(save_path)
+            
+        pres.Close()
+        return image_paths
+    except Exception as e:
+        print(f"Ошибка экспорта: {e}")
+        return []
+    finally:
+        try:
+            if 'pres' in locals(): del pres
+        except: pass
+
+# ==========================================
+# 2. АЛГОРИТМ CV (ИСПРАВЛЕННЫЙ КЛАСС)
+# ==========================================
 class VisualGrouperClassical:
     # ### ИСПРАВЛЕНО: Добавили аргумент `prs` (объект презентации)
     def __init__(self, slide, image_path, prs):
