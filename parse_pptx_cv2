@@ -6,7 +6,7 @@ import win32com.client
 from pptx import Presentation
 
 # ==========================================
-# 1. ГЕНЕРАТОР КАРТИНОК (Оставляем как было)
+# 1. ГЕНЕРАТОР КАРТИНОК
 # ==========================================
 def export_slides_to_images(pptx_path, output_folder):
     abs_pptx = os.path.abspath(pptx_path)
@@ -17,8 +17,6 @@ def export_slides_to_images(pptx_path, output_folder):
 
     try:
         powerpoint = win32com.client.Dispatch("PowerPoint.Application")
-        # powerpoint.Visible = 1 
-        
         pres = powerpoint.Presentations.Open(abs_pptx, WithWindow=False)
         image_paths = []
         for i, slide in enumerate(pres.Slides):
@@ -27,11 +25,10 @@ def export_slides_to_images(pptx_path, output_folder):
             if os.path.exists(save_path): os.remove(save_path)
             slide.Export(save_path, "JPG", 0, 0)
             image_paths.append(save_path)
-            
         pres.Close()
         return image_paths
     except Exception as e:
-        print(f"Ошибка экспорта: {e}")
+        print(f"Ошибка экспорта (проверьте, закрыт ли файл в PowerPoint): {e}")
         return []
     finally:
         try:
@@ -39,23 +36,26 @@ def export_slides_to_images(pptx_path, output_folder):
         except: pass
 
 # ==========================================
-# 2. АЛГОРИТМ CV (ИСПРАВЛЕННЫЙ КЛАСС)
+# 2. УЛУЧШЕННЫЙ АЛГОРИТМ CV (CANNY EDGE)
 # ==========================================
 class VisualGrouperClassical:
-    # ### ИСПРАВЛЕНО: Добавили аргумент `prs` (объект презентации)
     def __init__(self, slide, image_path, prs):
         self.slide = slide
         self.img = cv2.imread(image_path)
         
         if self.img is None:
-            raise ValueError(f"Не удалось прочитать картинку: {image_path}")
+            raise ValueError(f"CRITICAL: Не удалось прочитать {image_path}")
             
         self.h, self.w = self.img.shape[:2]
         
-        # ### ИСПРАВЛЕНО: Берем размеры из переданного объекта prs
-        # prs.slide_width и prs.slide_height хранят размеры в EMU
-        self.scale_x = self.w / prs.slide_width
-        self.scale_y = self.h / prs.slide_height
+        # Получаем размеры слайда (с проверкой на 0)
+        sw = prs.slide_width if prs.slide_width > 0 else 9144000
+        sh = prs.slide_height if prs.slide_height > 0 else 6858000
+        
+        self.scale_x = self.w / sw
+        self.scale_y = self.h / sh
+        
+        print(f"   [Debug] Image: {self.w}x{self.h} px | PPTX: {sw}x{sh} EMU | Scale: {self.scale_x:.4f}")
 
     def emu_to_pixels(self, shape):
         x = int(shape.left * self.scale_x)
@@ -65,26 +65,39 @@ class VisualGrouperClassical:
         return [x, y, x + w, y + h]
 
     def detect_layout_blocks(self):
+        """
+        Использует Canny Edge Detection + Dilation.
+        Работает лучше на цветных фонах.
+        """
+        # 1. Ч/Б
         gray = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-
-        # Настройка ядра: (30, 25) - можно менять
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 25))
-        dilated = cv2.dilate(thresh, kernel, iterations=3)
-
+        
+        # 2. Поиск границ (Canny) вместо Threshold
+        # Это найдет любые контрастные переходы (текст, рамки таблиц)
+        edges = cv2.Canny(gray, 50, 150)
+        
+        # 3. Жирное размытие (Dilation)
+        # Увеличил ядро, чтобы наверняка склеить элементы
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 30))
+        dilated = cv2.dilate(edges, kernel, iterations=3)
+        
+        # 4. Поиск контуров
         contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         blocks = []
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
-            if w < 50 or h < 50: continue
-            if w > self.w * 0.95 and h > self.h * 0.95: continue
+            
+            # Фильтры
+            if w < 30 or h < 30: continue # Слишком мелко
+            if w > self.w * 0.98 and h > self.h * 0.98: continue # Рамка во весь слайд
             
             blocks.append({
                 "bbox": [x, y, x + w, y + h],
                 "elements": []
             })
             
+        print(f"   [Debug] Найдено визуальных блоков (Green): {len(blocks)}")
         return blocks
 
     def get_intersection(self, boxA, boxB):
@@ -96,34 +109,61 @@ class VisualGrouperClassical:
         interArea = max(0, xB - xA) * max(0, yB - yA)
         if interArea == 0: return 0
         
+        # Считаем пересечение относительно объекта PPTX
+        # (Какая часть объекта попала в блок)
         boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
         if boxAArea == 0: return 0
         
         return interArea / boxAArea
 
-    def group_elements(self):
+    def group_elements(self, debug_filename=None):
         blocks = self.detect_layout_blocks()
         orphans = []
 
+        # --- ОТЛАДКА: Рисуем картинку ---
+        debug_img = self.img.copy() if debug_filename else None
+        
+        # 1. Рисуем найденные блоки (ЗЕЛЕНЫЕ)
+        if debug_img is not None:
+            for b in blocks:
+                bx1, by1, bx2, by2 = b['bbox']
+                cv2.rectangle(debug_img, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
+
+        count_matched = 0
+        
+        # 2. Матчинг
         for shape in self.slide.shapes:
             if not hasattr(shape, "left"): continue
             
             shape_rect = self.emu_to_pixels(shape)
+            
+            # ОТЛАДКА: Рисуем объекты PPTX (КРАСНЫЕ)
+            if debug_img is not None:
+                sx1, sy1, sx2, sy2 = shape_rect
+                cv2.rectangle(debug_img, (sx1, sy1), (sx2, sy2), (0, 0, 255), 2)
             
             best_score = 0
             best_block_idx = -1
             
             for i, block in enumerate(blocks):
                 score = self.get_intersection(shape_rect, block["bbox"])
-                if score > 0.3 and score > best_score:
+                # Снизил порог до 0.2 (20% пересечения достаточно)
+                if score > 0.2 and score > best_score:
                     best_score = score
                     best_block_idx = i
             
             if best_block_idx != -1:
                 blocks[best_block_idx]["elements"].append(shape)
+                count_matched += 1
             else:
                 orphans.append(shape)
 
+        if debug_img is not None:
+            cv2.imwrite(debug_filename, debug_img)
+            print(f"   [Debug] Saved visualization to {debug_filename}")
+            
+        print(f"   [Debug] Matched: {count_matched} | Orphans: {len(orphans)}")
+        
         blocks.sort(key=lambda b: b["bbox"][1])
         return blocks, orphans
 
@@ -138,56 +178,60 @@ if __name__ == "__main__":
         print(f"Файл {PPTX_FILE} не найден!")
         exit()
 
-    print("1. Генерация картинок...")
+    print("--- Start ---")
     image_paths = export_slides_to_images(PPTX_FILE, IMG_FOLDER)
     
     if not image_paths:
-        print("Ошибка генерации картинок.")
+        print("Картинки не созданы.")
         exit()
 
-    print("2. Анализ...")
-    # Создаем объект презентации
     prs = Presentation(PPTX_FILE)
-    
     full_result = []
 
     for i, slide in enumerate(prs.slides):
-        print(f"--- Слайд {i+1} ---")
+        print(f"\nProcessing Slide {i+1}...")
         img_path = image_paths[i]
         
-        # ### ИСПРАВЛЕНО: Передаем `prs` третьим аргументом
         grouper = VisualGrouperClassical(slide, img_path, prs)
         
-        blocks, orphans = grouper.group_elements()
+        # Включаем сохранение отладочной картинки!
+        blocks, orphans = grouper.group_elements(debug_filename=f"debug_slide_{i+1}.jpg")
         
-        # ... дальнейший код формирования JSON (как в прошлом примере) ...
         slide_data = {"slide_number": i+1, "groups": []}
         
         for block in blocks:
             if not block["elements"]: continue
             
+            # Сбор данных
             elements = sorted(block["elements"], key=lambda s: s.top)
-            
-            group_obj = {
-                "type": "content_block",
-                "text_content": "",
-                "data_objects": []
-            }
             texts = []
+            has_chart = False
+            has_table = False
             
             for el in elements:
                 if hasattr(el, "text") and el.text.strip():
                     texts.append(el.text.strip())
-                if el.has_chart:
-                    group_obj["type"] = "chart_group"
-                    group_obj["data_objects"].append({"info": "Chart found"})
-                if el.has_table:
-                    group_obj["type"] = "table_group"
-                    group_obj["data_objects"].append({"info": "Table found"})
+                if el.has_chart: has_chart = True
+                if el.has_table: has_table = True
 
-            group_obj["text_content"] = "\n".join(texts)
-            slide_data["groups"].append(group_obj)
+            group_type = "text"
+            if has_chart: group_type = "chart_group"
+            elif has_table: group_type = "table_group"
+
+            slide_data["groups"].append({
+                "type": group_type,
+                "text": "\n".join(texts),
+                "items_count": len(elements)
+            })
             
         full_result.append(slide_data)
+    
+    print("\n--- RESULT SUMMARY ---")
+    # Печатаем сокращенно, чтобы видеть структуру
+    for slide in full_result:
+        print(f"Slide {slide['slide_number']}: {len(slide['groups'])} groups found.")
+        for g in slide['groups']:
+            print(f"  - [{g['type']}] Text len: {len(g['text'])}")
 
-    print(json.dumps(full_result, indent=2, ensure_ascii=False))
+    with open("result.json", "w", encoding="utf-8") as f:
+        json.dump(full_result, f, indent=2, ensure_ascii=False)
