@@ -1,0 +1,165 @@
+import cv2
+import numpy as np
+from pptx import Presentation
+
+class VisualGrouperClassical:
+    def __init__(self, slide, image_path):
+        self.slide = slide
+        # Загружаем изображение слайда
+        self.img = cv2.imread(image_path)
+        if self.img is None:
+            raise ValueError("Не удалось открыть изображение")
+            
+        self.h, self.w = self.img.shape[:2]
+        
+        # Коэффициенты для перевода координат PPTX (EMU) -> Pixels
+        self.scale_x = self.w / slide.parent.slide_width
+        self.scale_y = self.h / slide.parent.slide_height
+
+    def emu_to_pixels(self, shape):
+        x = int(shape.left * self.scale_x)
+        y = int(shape.top * self.scale_y)
+        w = int(shape.width * self.scale_x)
+        h = int(shape.height * self.scale_y)
+        return [x, y, x + w, y + h]
+
+    def detect_layout_blocks(self):
+        """
+        Алгоритм поиска блоков с помощью морфологии.
+        Не использует нейросети!
+        """
+        # 1. Ч/Б и инверсия (чтобы текст стал белым на черном)
+        gray = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
+        
+        # Бинаризация (отсекаем шум)
+        # THRESH_OTSU сам подбирает порог яркости
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+        # 2. МОРФОЛОГИЯ (Самый важный шаг)
+        # Мы создаем ядро - "кисть", которой будем размазывать пиксели.
+        # (20, 15) означает: размазывать сильно по ширине (20px) и чуть меньше по высоте (15px).
+        # Это позволяет склеить слова в строку, а строки в параграф.
+        # Если графики и подписи далеко друг от друга, увеличьте эти числа (например, 30, 30).
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 25))
+        
+        # Dilation - расширение белых областей
+        dilated = cv2.dilate(thresh, kernel, iterations=3)
+
+        # 3. Поиск контуров (границ получившихся пятен)
+        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        blocks = []
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            
+            # Фильтрация мусора:
+            # Игнорируем слишком мелкие пятна (шум)
+            if w < 50 or h < 50: continue
+            
+            # Игнорируем гигантские пятна (например, рамку слайда, если она есть)
+            if w > self.w * 0.9 and h > self.h * 0.9: continue
+            
+            blocks.append({
+                "bbox": [x, y, x + w, y + h], # [x1, y1, x2, y2]
+                "elements": []
+            })
+            
+        return blocks
+
+    def get_intersection(self, boxA, boxB):
+        # Вычисление площади пересечения
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+
+        interArea = max(0, xB - xA) * max(0, yB - yA)
+        if interArea == 0: return 0
+        
+        # Площадь объекта PPTX
+        boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+        return interArea / boxAArea # Какая часть объекта попала в блок
+
+    def group_elements(self):
+        # 1. Получаем визуальные блоки
+        blocks = self.detect_layout_blocks()
+        orphans = [] # Элементы, не попавшие ни в один блок
+
+        # 2. Раскидываем объекты PPTX по найденным блокам
+        for shape in self.slide.shapes:
+            if not hasattr(shape, "left"): continue
+            
+            shape_rect = self.emu_to_pixels(shape)
+            
+            best_score = 0
+            best_block_idx = -1
+            
+            for i, block in enumerate(blocks):
+                score = self.get_intersection(shape_rect, block["bbox"])
+                
+                # Если объект пересекается с блоком хотя бы на 30%
+                if score > 0.3 and score > best_score:
+                    best_score = score
+                    best_block_idx = i
+            
+            if best_block_idx != -1:
+                blocks[best_block_idx]["elements"].append(shape)
+            else:
+                orphans.append(shape)
+
+        # Сортируем блоки сверху-вниз для правильного чтения
+        blocks.sort(key=lambda b: b["bbox"][1])
+        
+        return blocks, orphans
+
+# ================================
+# ПРИМЕР ИСПОЛЬЗОВАНИЯ В ПАЙПЛАЙНЕ
+# ================================
+
+def parse_slide_offline(slide, image_path):
+    grouper = VisualGrouperClassical(slide, image_path)
+    
+    # Получаем сгруппированные данные
+    blocks, orphans = grouper.group_elements()
+    
+    slide_data = []
+    
+    for block in blocks:
+        if not block["elements"]: continue
+        
+        # Сортируем элементы внутри блока сверху-вниз
+        elements = sorted(block["elements"], key=lambda s: s.top)
+        
+        # Определяем тип блока по его содержимому
+        block_type = "text_block"
+        content_items = []
+        full_text = []
+        
+        for el in elements:
+            # Текст
+            if hasattr(el, "text") and el.text.strip():
+                text = el.text.strip()
+                full_text.append(text)
+                content_items.append({"type": "text", "value": text})
+            
+            # Если в блоке есть график - значит это блок графика
+            if el.has_chart:
+                block_type = "chart_block"
+                # Тут ваш код extraction: extract_chart_data(el)
+                content_items.append({"type": "chart", "obj": el})
+                
+            # Если таблица
+            if el.has_table:
+                block_type = "table_block"
+                # Тут ваш код extraction: extract_table_data(el)
+                content_items.append({"type": "table", "obj": el})
+        
+        # Формируем результат для LLM
+        if content_items:
+            slide_data.append({
+                "type": block_type,
+                "combined_text": "\n".join(full_text), # Весь текст блока (включая подписи!)
+                "items": content_items
+            })
+            
+    return slide_data
