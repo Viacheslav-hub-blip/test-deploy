@@ -1,0 +1,215 @@
+"""
+Конвертер результатов парсинга PPTX из JSON в читаемый TXT файл.
+"""
+
+import json
+from typing import List, Dict, Any
+from pathlib import Path
+
+
+def convert_json_to_txt(json_path: str, output_path: str) -> None:
+    """
+    Конвертирует JSON файл в TXT.
+    
+    Args:
+        json_path: Путь к JSON файлу
+        output_path: Путь для сохранения TXT файла
+    """
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    lines = []
+    lines.append("РЕЗУЛЬТАТЫ ПАРСИНГА ПРЕЗЕНТАЦИИ")
+    lines.append("=" * 60)
+    lines.append(f"Всего слайдов: {len(data)}")
+    lines.append("")
+    
+    for slide in data:
+        slide_text = _convert_slide(slide)
+        lines.append(slide_text)
+    
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    
+    print(f"Сохранено: {output_path}")
+
+
+def _convert_slide(slide: Dict) -> str:
+    """Конвертирует один слайд"""
+    lines = []
+    
+    slide_num = slide.get("slide_number", "?")
+    method = slide.get("processing_method", "unknown")
+    
+    lines.append("=" * 60)
+    lines.append(f"СЛАЙД {slide_num}")
+    lines.append(f"Метод обработки: {method}")
+    
+    metrics = slide.get("quality_metrics", {})
+    if metrics and isinstance(metrics, dict):
+        score = metrics.get("score", "N/A")
+        lines.append(f"Оценка качества: {score}")
+    
+    lines.append("=" * 60)
+    lines.append("")
+    
+    layout_groups = slide.get("layout_groups", [])
+    
+    if not layout_groups:
+        lines.append("[Слайд пустой или контент не извлечён]")
+        lines.append("")
+        return "\n".join(lines)
+    
+    for i, group in enumerate(layout_groups, 1):
+        group_text = _convert_group(group, i)
+        lines.append(group_text)
+    
+    return "\n".join(lines)
+
+
+def _convert_group(group: Dict, group_num: int) -> str:
+    """Конвертирует одну группу контента"""
+    lines = []
+    
+    group_type = group.get("type", "unknown")
+    header = group.get("header")
+    
+    lines.append(f"[Блок {group_num}: {group_type}]")
+    
+    if header:
+        lines.append(f"  Заголовок: {header}")
+    
+    # Текст
+    text_elements = group.get("text_elements", [])
+    combined_text = group.get("combined_text", "")
+    
+    if text_elements:
+        lines.append("  Текст:")
+        for elem in text_elements:
+            if isinstance(elem, dict):
+                text = elem.get("text", "")
+                role = elem.get("role", "")
+                if text:
+                    role_str = f" [{role}]" if role else ""
+                    lines.append(f"    {text}{role_str}")
+            elif isinstance(elem, str) and elem.strip():
+                lines.append(f"    {elem}")
+    elif combined_text:
+        lines.append("  Текст:")
+        for line in combined_text.split("\n"):
+            if line.strip():
+                lines.append(f"    {line.strip()}")
+    
+    # Графики
+    charts_data = group.get("charts_data", [])
+    if charts_data:
+        charts_text = _convert_charts(charts_data)
+        lines.append(charts_text)
+    
+    # Таблицы
+    tables_data = group.get("tables_data", [])
+    if tables_data:
+        tables_text = _convert_tables(tables_data)
+        lines.append(tables_text)
+    
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _convert_charts(charts: List[Dict]) -> str:
+    """Конвертирует данные графиков"""
+    lines = []
+    
+    for i, chart in enumerate(charts, 1):
+        if not isinstance(chart, dict):
+            continue
+        
+        if "error" in chart:
+            lines.append(f"  График {i}: [Ошибка: {chart['error']}]")
+            continue
+        
+        chart_title = chart.get("title", "")
+        series_list = chart.get("series", [])
+        
+        if chart_title:
+            lines.append(f"  График: {chart_title}")
+        else:
+            lines.append(f"  График {i}:")
+        
+        for series in series_list:
+            if not isinstance(series, dict):
+                continue
+            
+            legend = series.get("legend", "")
+            mapped_data = series.get("mapped_data", {})
+            
+            if legend:
+                lines.append(f"    Серия: {legend}")
+            
+            if mapped_data and isinstance(mapped_data, dict):
+                lines.append(f"    Данные:")
+                for category, value in mapped_data.items():
+                    if isinstance(value, float):
+                        if value == int(value):
+                            value_str = str(int(value))
+                        else:
+                            value_str = f"{value:.2f}"
+                    else:
+                        value_str = str(value) if value is not None else "N/A"
+                    
+                    lines.append(f"      {category}: {value_str}")
+    
+    return "\n".join(lines)
+
+
+def _convert_tables(tables: List[Any]) -> str:
+    """Конвертирует данные таблиц"""
+    lines = []
+    
+    for i, table in enumerate(tables, 1):
+        lines.append(f"  Таблица {i}:")
+        
+        if not table:
+            lines.append("    [Пустая таблица]")
+            continue
+        
+        if isinstance(table, list):
+            # Вычисляем ширину колонок
+            col_widths = {}
+            for row in table:
+                if isinstance(row, list):
+                    for col_idx, cell in enumerate(row):
+                        cell_len = len(str(cell)) if cell else 0
+                        col_widths[col_idx] = min(40, max(col_widths.get(col_idx, 5), cell_len))
+            
+            for row_idx, row in enumerate(table):
+                if isinstance(row, list):
+                    formatted_cells = []
+                    for col_idx, cell in enumerate(row):
+                        cell_str = str(cell) if cell else ""
+                        width = col_widths.get(col_idx, 10)
+                        formatted_cells.append(cell_str.ljust(width))
+                    
+                    row_str = " | ".join(formatted_cells)
+                    lines.append(f"    {row_str}")
+                    
+                    # Разделитель после заголовка
+                    if row_idx == 0 and len(table) > 1:
+                        separator = "-+-".join("-" * col_widths.get(j, 10) for j in range(len(row)))
+                        lines.append(f"    {separator}")
+                else:
+                    lines.append(f"    {row}")
+        else:
+            lines.append(f"    {table}")
+    
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    JSON_INPUT = "final_output.json"
+    TXT_OUTPUT = "presentation_content.txt"
+    
+    if not Path(JSON_INPUT).exists():
+        print(f"Ошибка: файл не найден: {JSON_INPUT}")
+    else:
+        convert_json_to_txt(JSON_INPUT, TXT_OUTPUT)
