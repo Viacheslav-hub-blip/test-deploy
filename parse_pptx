@@ -1,314 +1,1678 @@
+"""
+Гибридный парсер PPTX с динамической адаптацией параметров CV.
+
+Особенности:
+1. CV-детекция блоков с оптимизацией параметров
+2. Структурный анализ форматирования (не длины текста)
+3. Минимизация orphans через итеративную оптимизацию
+4. Поддержка текстовых слайдов с колонками
+5. Учёт нативных групп PowerPoint
+"""
+
+import cv2
+import numpy as np
 import json
+import os
+import random
+import shutil
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional, Tuple, Set, Any, Callable
+from enum import Enum
+from collections import defaultdict
+from pathlib import Path
+
 from pptx import Presentation
-from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.shapes.group import GroupShape
+from pptx.shapes.graphfrm import GraphicFrame
+from pptx.enum.shapes import PP_PLACEHOLDER
+
+# Для экспорта изображений (Windows - COM, иначе - pdf2image или другое)
+import platform
+if platform.system() == "Windows":
+    import comtypes.client
+
 
 # ==========================================
-# 1. ЛОГИКА СОРТИРОВКИ (LAYOUT ANALYSIS)
+# КОНФИГУРАЦИЯ
 # ==========================================
 
-def get_shape_coords(shape):
-    """Возвращает координаты и размеры шейпа."""
-    return {
-        'left': shape.left,
-        'top': shape.top,
-        'right': shape.left + shape.width,
-        'bottom': shape.top + shape.height,
-        'width': shape.width,
-        'height': shape.height,
-        'obj': shape
+CONFIG = {
+    # Дефолтные параметры CV-детекции
+    "default_cv_params": {
+        "min_threshold": 20,
+        "max_threshold": 150,
+        "ksize_width": 4,
+        "ksize_height": 38,
+        "dilate_iterations": 6,
+        "min_intersection_score": 0.15
+    },
+    
+    # Стратегии оптимизации CV-параметров
+    "cv_strategies": {
+        "balanced": {
+            "min_threshold": (20, 40),
+            "max_threshold": (120, 180),
+            "ksize_width": (3, 6),
+            "ksize_height": (25, 45),
+            "dilate_iterations": (4, 7),
+            "min_intersection_score": (0.12, 0.22)
+        },
+        "wide_merge": {
+            "min_threshold": (10, 25),
+            "max_threshold": (70, 130),
+            "ksize_width": (5, 12),
+            "ksize_height": (35, 60),
+            "dilate_iterations": (5, 9),
+            "min_intersection_score": (0.08, 0.18)
+        },
+        "vertical_focus": {
+            "min_threshold": (15, 35),
+            "max_threshold": (90, 160),
+            "ksize_width": (2, 5),
+            "ksize_height": (45, 80),
+            "dilate_iterations": (5, 10),
+            "min_intersection_score": (0.10, 0.25)
+        },
+        "aggressive": {
+            "min_threshold": (5, 20),
+            "max_threshold": (50, 100),
+            "ksize_width": (8, 18),
+            "ksize_height": (40, 70),
+            "dilate_iterations": (6, 12),
+            "min_intersection_score": (0.05, 0.15)
+        },
+        "conservative": {
+            "min_threshold": (30, 50),
+            "max_threshold": (140, 200),
+            "ksize_width": (2, 4),
+            "ksize_height": (20, 35),
+            "dilate_iterations": (3, 5),
+            "min_intersection_score": (0.18, 0.30)
+        }
+    },
+    
+    # Параметры оптимизации
+    "optimization": {
+        "iterations_per_strategy": 5,
+        "min_acceptable_score": 0.5,
+        "early_stop_score": 0.85,
+    },
+    
+    # Параметры оценки качества
+    "quality": {
+        "target_orphan_ratio": 0.1,        # Максимум 10% orphans
+        "target_block_range": (2, 20),     # Желаемое кол-во блоков
+        "bonus_chart_with_title": 0.15,    # Бонус за график с заголовком
+        "bonus_multi_element_block": 0.1,  # Бонус за блок с несколькими элементами
+        "penalty_isolated_title": 0.2,     # Штраф за изолированный заголовок
+        "penalty_chart_without_title": 0.15,  # Штраф за график без заголовка
+    },
+    
+    # Параметры группировки
+    "grouping": {
+        "max_title_distance": 80,
+        "max_legend_distance_x": 120,
+        "max_legend_distance_y": 50,
+        "column_gap_ratio": 0.06,
+    },
+    
+    # Классификация
+    "classification": {
+        "header_zone_ratio": 0.18,
+        "footer_zone_ratio": 0.85,
+        "min_importance_for_header": 0.22,
+    },
+    
+    # Debug
+    "debug": {
+        "save_contours": True,
+        "output_dir": "debug_contours"
     }
+}
 
-def sort_shapes_by_layout(shapes, slide_height):
-    """
-    Сортирует элементы слайда:
-    1. Header (верхние 20%) - сортируется стандартно.
-    2. Body - группируется по колонкам (слева направо), внутри колонки - сверху вниз.
-    """
-    if not shapes:
+
+# ==========================================
+# ТИПЫ И СТРУКТУРЫ
+# ==========================================
+
+class ElementRole(Enum):
+    SLIDE_TITLE = "slide_title"
+    SECTION_HEADER = "section_header"
+    CONTENT_TITLE = "content_title"
+    BODY_TEXT = "body_text"
+    BULLET_POINT = "bullet_point"
+    CHART = "chart"
+    TABLE = "table"
+    LEGEND = "legend"
+    FOOTNOTE = "footnote"
+    IMAGE = "image"
+    UNKNOWN = "unknown"
+
+
+class LayoutType(Enum):
+    SINGLE_COLUMN = "single_column"
+    TWO_COLUMNS = "two_columns"
+    MULTI_COLUMNS = "multi_columns"
+    GRID = "grid"
+    MIXED = "mixed"
+    TITLE_ONLY = "title_only"
+    EMPTY = "empty"
+
+
+@dataclass
+class CVParams:
+    """Параметры CV-детекции"""
+    min_threshold: int = 20
+    max_threshold: int = 150
+    ksize_width: int = 4
+    ksize_height: int = 38
+    dilate_iterations: int = 6
+    min_intersection_score: float = 0.15
+    strategy_name: str = "default"
+    
+    def to_dict(self) -> Dict:
+        return {
+            "min_threshold": self.min_threshold,
+            "max_threshold": self.max_threshold,
+            "ksize_width": self.ksize_width,
+            "ksize_height": self.ksize_height,
+            "dilate_iterations": self.dilate_iterations,
+            "min_intersection_score": self.min_intersection_score,
+            "strategy": self.strategy_name
+        }
+
+
+@dataclass
+class TextFormatting:
+    """Форматирование текста"""
+    font_size: Optional[float] = None
+    is_bold: bool = False
+    is_title_placeholder: bool = False
+    indent_level: int = 0
+    has_bullet: bool = False
+    
+    @property
+    def importance_score(self) -> float:
+        score = 0.0
+        if self.is_title_placeholder:
+            score += 0.5
+        if self.font_size:
+            # Нормализуем: 12pt = 0, 24pt = 0.3, 36pt+ = 0.3
+            score += min(0.3, max(0, (self.font_size - 12) / 40))
+        if self.is_bold:
+            score += 0.12
+        if not self.has_bullet:
+            score += 0.04
+        if self.indent_level == 0:
+            score += 0.04
+        return min(1.0, score)
+
+
+@dataclass
+class LayoutElement:
+    """Элемент слайда"""
+    shape: Any
+    role: ElementRole
+    bbox: Tuple[int, int, int, int]
+    text: str = ""
+    formatting: TextFormatting = field(default_factory=TextFormatting)
+    native_group_id: Optional[int] = None
+    cv_block_id: Optional[int] = None
+    column_id: Optional[int] = None
+    reading_order: int = 0
+    
+    @property
+    def center_x(self) -> float:
+        return (self.bbox[0] + self.bbox[2]) / 2
+    
+    @property
+    def center_y(self) -> float:
+        return (self.bbox[1] + self.bbox[3]) / 2
+    
+    @property
+    def width(self) -> int:
+        return self.bbox[2] - self.bbox[0]
+    
+    @property
+    def height(self) -> int:
+        return self.bbox[3] - self.bbox[1]
+    
+    @property
+    def is_visual(self) -> bool:
+        return self.role in (ElementRole.CHART, ElementRole.TABLE)
+    
+    @property
+    def is_header_like(self) -> bool:
+        return self.role in (
+            ElementRole.SLIDE_TITLE,
+            ElementRole.SECTION_HEADER,
+            ElementRole.CONTENT_TITLE
+        )
+
+
+@dataclass
+class CVBlock:
+    """Блок от CV-детекции"""
+    bbox: Tuple[int, int, int, int]
+    block_id: int
+    elements: List[LayoutElement] = field(default_factory=list)
+
+
+@dataclass
+class ContentGroup:
+    """Группа связанного контента"""
+    elements: List[LayoutElement] = field(default_factory=list)
+    group_type: str = "unknown"
+    header: Optional[LayoutElement] = None
+    visual_content: Optional[LayoutElement] = None
+    cv_block_id: Optional[int] = None
+    native_group_id: Optional[int] = None
+    column_id: Optional[int] = None
+    
+    @property
+    def bbox(self) -> Tuple[int, int, int, int]:
+        if not self.elements:
+            return (0, 0, 0, 0)
+        return (
+            min(e.bbox[0] for e in self.elements),
+            min(e.bbox[1] for e in self.elements),
+            max(e.bbox[2] for e in self.elements),
+            max(e.bbox[3] for e in self.elements)
+        )
+    
+    @property
+    def has_visual(self) -> bool:
+        return self.visual_content is not None
+    
+    @property
+    def has_header(self) -> bool:
+        return self.header is not None
+
+
+@dataclass
+class QualityMetrics:
+    """Метрики качества группировки"""
+    total_elements: int = 0
+    total_groups: int = 0
+    orphan_count: int = 0
+    orphan_ratio: float = 0.0
+    charts_with_title: int = 0
+    charts_without_title: int = 0
+    isolated_titles: int = 0
+    multi_element_groups: int = 0
+    score: float = 0.0
+    
+    def to_dict(self) -> Dict:
+        return {
+            "total_elements": self.total_elements,
+            "total_groups": self.total_groups,
+            "orphan_count": self.orphan_count,
+            "orphan_ratio": round(self.orphan_ratio, 3),
+            "charts_with_title": self.charts_with_title,
+            "charts_without_title": self.charts_without_title,
+            "isolated_titles": self.isolated_titles,
+            "multi_element_groups": self.multi_element_groups,
+            "score": round(self.score, 3)
+        }
+
+
+# ==========================================
+# ЭКСПОРТ ИЗОБРАЖЕНИЙ
+# ==========================================
+
+class SlideImageExporter:
+    """Экспорт слайдов в изображения"""
+    
+    @staticmethod
+    def export(pptx_path: str, output_folder: str) -> List[str]:
+        """Экспортирует слайды в JPG"""
+        os.makedirs(output_folder, exist_ok=True)
+        
+        if platform.system() == "Windows":
+            return SlideImageExporter._export_windows(pptx_path, output_folder)
+        else:
+            return SlideImageExporter._export_fallback(pptx_path, output_folder)
+    
+    @staticmethod
+    def _export_windows(pptx_path: str, output_folder: str) -> List[str]:
+        """Экспорт через COM на Windows"""
+        powerpoint = comtypes.client.CreateObject("PowerPoint.Application")
+        powerpoint.Visible = 1
+        
+        abs_path = os.path.abspath(pptx_path)
+        abs_output = os.path.abspath(output_folder)
+        
+        presentation = powerpoint.Presentations.Open(abs_path, WithWindow=False)
+        
+        images = []
+        for i, slide in enumerate(presentation.Slides):
+            output_path = os.path.join(abs_output, f"slide_{i+1:03d}.jpg")
+            slide.Export(output_path, "JPG", 1920, 1080)
+            images.append(output_path)
+        
+        presentation.Close()
+        powerpoint.Quit()
+        
+        return images
+    
+    @staticmethod
+    def _export_fallback(pptx_path: str, output_folder: str) -> List[str]:
+        """Fallback для не-Windows систем"""
+        # Можно использовать pdf2image, LibreOffice, или другие методы
+        # Для примера — заглушка
+        print("Warning: Non-Windows export not fully implemented")
         return []
 
-    # Порог заголовка: 20% от высоты слайда
-    header_threshold = slide_height * 0.20
+
+# ==========================================
+# CV ДЕТЕКТОР
+# ==========================================
+
+class CVBlockDetector:
+    """Детекция блоков через OpenCV"""
     
-    headers = []
-    body_shapes = []
-
-    for shape in shapes:
-        # Если шейп целиком в верхней зоне
-        if shape.top + shape.height < header_threshold:
-            headers.append(shape)
-        else:
-            body_shapes.append(shape)
-
-    # Заголовки: Сверху-вниз, слева-направо
-    sorted_headers = sorted(headers, key=lambda x: (x.top, x.left))
-
-    if not body_shapes:
-        return sorted_headers
-
-    # --- Алгоритм колонок для Body ---
-    columns = [] 
+    def __init__(self, image_path: str):
+        self.image_path = image_path
+        self.img = cv2.imread(image_path)
+        if self.img is None:
+            raise ValueError(f"Cannot load image: {image_path}")
+        self.h, self.w = self.img.shape[:2]
     
-    # Сортируем body по левому краю для начала перебора
-    body_sorted_by_left = sorted(body_shapes, key=lambda x: x.left)
-
-    for shape in body_sorted_by_left:
-        s_coords = get_shape_coords(shape)
-        placed = False
+    def detect_blocks(self, params: CVParams, 
+                      debug_save: bool = False,
+                      debug_prefix: str = "") -> List[CVBlock]:
+        """Детекция блоков с заданными параметрами"""
         
-        for col in columns:
-            # Границы текущей колонки
-            col_min_left = min(c.left for c in col)
-            col_max_right = max(c.left + c.width for c in col)
+        gray = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
+        
+        # Canny edge detection
+        edges = cv2.Canny(gray, params.min_threshold, params.max_threshold)
+        
+        # Морфологическое расширение
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_RECT,
+            (params.ksize_width, params.ksize_height)
+        )
+        dilated = cv2.dilate(edges, kernel, iterations=params.dilate_iterations)
+        
+        # Поиск контуров
+        contours, _ = cv2.findContours(
+            dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        
+        # Debug: сохранение изображения с контурами
+        if debug_save and CONFIG["debug"]["save_contours"]:
+            self._save_debug_image(contours, params, debug_prefix)
+        
+        # Формирование блоков
+        blocks = []
+        for i, cnt in enumerate(contours):
+            x, y, w, h = cv2.boundingRect(cnt)
             
-            # Проверяем пересечение по оси X
-            overlap_start = max(s_coords['left'], col_min_left)
-            overlap_end = min(s_coords['right'], col_max_right)
-            overlap_width = max(0, overlap_end - overlap_start)
+            # Фильтрация
+            if w < 25 or h < 20:
+                continue
+            if w > self.w * 0.98 and h > self.h * 0.98:
+                continue
             
-            # Если пересечение больше 30% ширины текущего шейпа -> это та же колонка
-            if overlap_width > (s_coords['width'] * 0.3):
-                col.append(shape)
-                placed = True
+            blocks.append(CVBlock(
+                bbox=(x, y, x + w, y + h),
+                block_id=i
+            ))
+        
+        return blocks
+    
+    def _save_debug_image(self, contours, params: CVParams, prefix: str):
+        """Сохраняет изображение с контурами для отладки"""
+        debug_dir = CONFIG["debug"]["output_dir"]
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        img_copy = self.img.copy()
+        cv2.drawContours(img_copy, contours, -1, (0, 255, 0), 2)
+        
+        filename = f"{prefix}_{params.strategy_name}.jpg"
+        cv2.imwrite(os.path.join(debug_dir, filename), img_copy)
+    
+    def detect_columns(self) -> List[Tuple[int, int]]:
+        """Детекция колонок через вертикальную проекцию"""
+        gray = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
+        
+        # Вертикальная проекция (количество не-белых пикселей в каждом столбце)
+        vertical_proj = np.sum(gray < 245, axis=0)
+        
+        # Сглаживание
+        kernel_size = max(1, self.w // 50)
+        if kernel_size > 1:
+            vertical_proj = np.convolve(
+                vertical_proj, 
+                np.ones(kernel_size) / kernel_size, 
+                mode='same'
+            )
+        
+        # Порог для "пустой" зоны
+        threshold = self.h * 0.05
+        
+        # Находим промежутки
+        gaps = []
+        in_gap = False
+        gap_start = 0
+        
+        min_gap_width = int(self.w * CONFIG["grouping"]["column_gap_ratio"])
+        
+        for x, val in enumerate(vertical_proj):
+            if val < threshold and not in_gap:
+                in_gap = True
+                gap_start = x
+            elif val >= threshold and in_gap:
+                in_gap = False
+                gap_width = x - gap_start
+                if gap_width >= min_gap_width:
+                    gaps.append((gap_start, x))
+        
+        # Формируем колонки
+        columns = []
+        prev_end = 0
+        
+        for gap_start, gap_end in gaps:
+            if gap_start > prev_end + 50:  # Минимальная ширина колонки
+                columns.append((prev_end, gap_start))
+            prev_end = gap_end
+        
+        if prev_end < self.w - 50:
+            columns.append((prev_end, self.w))
+        
+        return columns if columns else [(0, self.w)]
+
+
+# ==========================================
+# АНАЛИЗАТОР ФОРМАТИРОВАНИЯ
+# ==========================================
+
+class FormattingAnalyzer:
+    """Анализ форматирования текста из PowerPoint"""
+    
+    TITLE_PLACEHOLDERS = {
+        PP_PLACEHOLDER.TITLE,
+        PP_PLACEHOLDER.CENTER_TITLE,
+        PP_PLACEHOLDER.SUBTITLE,
+    }
+    
+    @staticmethod
+    def analyze(shape) -> TextFormatting:
+        formatting = TextFormatting()
+        
+        # Placeholder type
+        try:
+            if hasattr(shape, 'placeholder_format') and shape.placeholder_format:
+                if shape.placeholder_format.type in FormattingAnalyzer.TITLE_PLACEHOLDERS:
+                    formatting.is_title_placeholder = True
+        except:
+            pass
+        
+        # Text frame
+        try:
+            if hasattr(shape, 'text_frame') and shape.text_frame.paragraphs:
+                para = shape.text_frame.paragraphs[0]
+                formatting.indent_level = para.level or 0
+                
+                # Bullet
+                try:
+                    if hasattr(para, 'bullet') and para.bullet:
+                        if para.bullet.type is not None:
+                            formatting.has_bullet = True
+                except:
+                    pass
+                
+                # Font
+                if para.runs:
+                    run = para.runs[0]
+                    try:
+                        if run.font.size:
+                            formatting.font_size = run.font.size.pt
+                    except:
+                        pass
+                    try:
+                        if run.font.bold:
+                            formatting.is_bold = True
+                    except:
+                        pass
+        except:
+            pass
+        
+        return formatting
+
+
+# ==========================================
+# КЛАССИФИКАТОР РОЛЕЙ
+# ==========================================
+
+class RoleClassifier:
+    """Классификация ролей элементов"""
+    
+    def __init__(self, slide_width: int, slide_height: int):
+        self.slide_width = slide_width
+        self.slide_height = slide_height
+        cfg = CONFIG["classification"]
+        self.header_zone_y = slide_height * cfg["header_zone_ratio"]
+        self.footer_zone_y = slide_height * cfg["footer_zone_ratio"]
+    
+    def classify_all(self, elements: List[LayoutElement], 
+                     cv_blocks: List[CVBlock]) -> None:
+        """Классифицирует все элементы"""
+        # Первый проход: базовая классификация
+        for elem in elements:
+            if elem.role == ElementRole.UNKNOWN:
+                elem.role = self._classify_basic(elem)
+        
+        # Второй проход: контекстная классификация
+        for elem in elements:
+            if elem.role in (ElementRole.BODY_TEXT, ElementRole.UNKNOWN):
+                new_role = self._classify_contextual(elem, elements, cv_blocks)
+                if new_role != ElementRole.UNKNOWN:
+                    elem.role = new_role
+    
+    def _classify_basic(self, element: LayoutElement) -> ElementRole:
+        """Базовая классификация по типу shape"""
+        shape = element.shape
+        
+        # Визуальный контент
+        try:
+            if hasattr(shape, 'has_chart') and shape.has_chart:
+                return ElementRole.CHART
+            if hasattr(shape, 'has_table') and shape.has_table:
+                return ElementRole.TABLE
+        except:
+            pass
+        
+        formatting = element.formatting
+        
+        # Title placeholder
+        if formatting.is_title_placeholder:
+            return ElementRole.SLIDE_TITLE
+        
+        # Позиция + важность
+        if element.bbox[1] < self.header_zone_y:
+            if formatting.importance_score > CONFIG["classification"]["min_importance_for_header"]:
+                return ElementRole.SLIDE_TITLE
+        
+        # Сноска
+        if element.bbox[1] > self.footer_zone_y:
+            if formatting.importance_score < 0.15 and element.height < self.slide_height * 0.05:
+                return ElementRole.FOOTNOTE
+        
+        # Пункт списка
+        if formatting.has_bullet or formatting.indent_level > 0:
+            return ElementRole.BULLET_POINT
+        
+        return ElementRole.BODY_TEXT
+    
+    def _classify_contextual(self, element: LayoutElement,
+                             all_elements: List[LayoutElement],
+                             cv_blocks: List[CVBlock]) -> ElementRole:
+        """Контекстная классификация"""
+        
+        # Проверка на легенду
+        if self._is_legend(element, all_elements):
+            return ElementRole.LEGEND
+        
+        # Проверка на заголовок контента
+        if self._is_content_title(element, all_elements, cv_blocks):
+            return ElementRole.CONTENT_TITLE
+        
+        # Проверка на заголовок секции
+        if self._is_section_header(element, all_elements):
+            return ElementRole.SECTION_HEADER
+        
+        return ElementRole.UNKNOWN
+    
+    def _is_legend(self, element: LayoutElement,
+                   all_elements: List[LayoutElement]) -> bool:
+        """Проверка на легенду"""
+        if element.formatting.importance_score > 0.25:
+            return False
+        
+        charts = [e for e in all_elements if e.role == ElementRole.CHART]
+        
+        for chart in charts:
+            # В том же CV-блоке или близко
+            same_block = (
+                element.cv_block_id is not None and
+                chart.cv_block_id is not None and
+                element.cv_block_id == chart.cv_block_id
+            )
+            
+            # Справа от графика
+            is_right = (
+                element.bbox[0] > chart.bbox[2] - 40 and
+                element.bbox[0] < chart.bbox[2] + CONFIG["grouping"]["max_legend_distance_x"] and
+                chart.bbox[1] - 30 < element.center_y < chart.bbox[3] + 30
+            )
+            
+            # Снизу близко
+            is_below = (
+                element.bbox[1] > chart.bbox[3] and
+                element.bbox[1] < chart.bbox[3] + CONFIG["grouping"]["max_legend_distance_y"] and
+                abs(element.center_x - chart.center_x) < chart.width * 0.5 and
+                element.formatting.importance_score < 0.18
+            )
+            
+            if same_block and (is_right or is_below):
+                return True
+            
+            if is_right and element.width < chart.width * 0.4:
+                return True
+        
+        return False
+    
+    def _is_content_title(self, element: LayoutElement,
+                          all_elements: List[LayoutElement],
+                          cv_blocks: List[CVBlock]) -> bool:
+        """Проверка на заголовок графика/таблицы"""
+        if element.formatting.importance_score < 0.12:
+            return False
+        
+        visuals_below = [
+            e for e in all_elements
+            if e.is_visual and
+            e.bbox[1] > element.bbox[3] and
+            e.bbox[1] - element.bbox[3] < CONFIG["grouping"]["max_title_distance"]
+        ]
+        
+        for visual in visuals_below:
+            # Приоритет: тот же CV-блок
+            same_cv = (
+                element.cv_block_id is not None and
+                visual.cv_block_id is not None and
+                element.cv_block_id == visual.cv_block_id
+            )
+            
+            # Хорошее выравнивание
+            aligned = self._is_aligned(element, visual)
+            
+            if same_cv or aligned:
+                return True
+        
+        return False
+    
+    def _is_section_header(self, element: LayoutElement,
+                           all_elements: List[LayoutElement]) -> bool:
+        """Проверка на заголовок секции"""
+        if element.formatting.importance_score < CONFIG["classification"]["min_importance_for_header"]:
+            return False
+        
+        elements_below = [
+            e for e in all_elements
+            if e.bbox[1] > element.bbox[3] and
+            not e.is_visual and
+            e.role not in (ElementRole.FOOTNOTE, ElementRole.LEGEND) and
+            self._is_aligned(element, e)
+        ]
+        
+        if not elements_below:
+            return False
+        
+        # Элементы ниже должны быть менее важными
+        avg_importance = sum(e.formatting.importance_score for e in elements_below) / len(elements_below)
+        return element.formatting.importance_score > avg_importance + 0.08
+    
+    def _is_aligned(self, elem1: LayoutElement, elem2: LayoutElement) -> bool:
+        """Проверка выравнивания"""
+        # Перекрытие по X
+        overlap = min(elem1.bbox[2], elem2.bbox[2]) - max(elem1.bbox[0], elem2.bbox[0])
+        min_width = min(elem1.width, elem2.width)
+        if min_width > 0 and overlap > min_width * 0.3:
+            return True
+        
+        # По центру
+        if abs(elem1.center_x - elem2.center_x) < min_width * 0.35:
+            return True
+        
+        # По левому краю
+        if abs(elem1.bbox[0] - elem2.bbox[0]) < 35:
+            return True
+        
+        return False
+
+
+# ==========================================
+# ОЦЕНЩИК КАЧЕСТВА
+# ==========================================
+
+class QualityAssessor:
+    """Оценка качества группировки"""
+    
+    @staticmethod
+    def assess(groups: List[ContentGroup], 
+               orphans: List[LayoutElement],
+               total_elements: int) -> QualityMetrics:
+        """Вычисляет метрики качества"""
+        metrics = QualityMetrics()
+        metrics.total_elements = total_elements
+        metrics.total_groups = len(groups)
+        metrics.orphan_count = len(orphans)
+        metrics.orphan_ratio = len(orphans) / total_elements if total_elements > 0 else 0
+        
+        cfg = CONFIG["quality"]
+        
+        for group in groups:
+            # Графики с заголовками
+            if group.has_visual:
+                if group.has_header:
+                    metrics.charts_with_title += 1
+                else:
+                    metrics.charts_without_title += 1
+            
+            # Изолированные заголовки
+            if group.has_header and len(group.elements) == 1:
+                metrics.isolated_titles += 1
+            
+            # Многоэлементные группы
+            if len(group.elements) > 1:
+                metrics.multi_element_groups += 1
+        
+        # Вычисление score
+        score = 1.0
+        
+        # Штраф за orphans
+        if metrics.orphan_ratio > cfg["target_orphan_ratio"]:
+            excess = metrics.orphan_ratio - cfg["target_orphan_ratio"]
+            score -= min(0.4, excess * 2)
+        
+        # Штраф за слишком много/мало блоков
+        target_min, target_max = cfg["target_block_range"]
+        if metrics.total_groups < target_min:
+            score -= 0.15
+        elif metrics.total_groups > target_max:
+            score -= min(0.2, (metrics.total_groups - target_max) * 0.02)
+        
+        # Бонус за графики с заголовками
+        if metrics.charts_with_title > 0:
+            ratio = metrics.charts_with_title / (metrics.charts_with_title + metrics.charts_without_title)
+            score += ratio * cfg["bonus_chart_with_title"]
+        
+        # Штраф за графики без заголовков
+        score -= metrics.charts_without_title * cfg["penalty_chart_without_title"]
+        
+        # Штраф за изолированные заголовки
+        score -= metrics.isolated_titles * cfg["penalty_isolated_title"]
+        
+        # Бонус за многоэлементные группы
+        if metrics.total_groups > 0:
+            multi_ratio = metrics.multi_element_groups / metrics.total_groups
+            score += multi_ratio * cfg["bonus_multi_element_block"]
+        
+        metrics.score = max(0.0, min(1.0, score))
+        
+        return metrics
+
+
+# ==========================================
+# ОПТИМИЗАТОР ПАРАМЕТРОВ
+# ==========================================
+
+class ParameterOptimizer:
+    """Динамическая оптимизация параметров CV"""
+    
+    def __init__(self, cv_detector: CVBlockDetector):
+        self.cv_detector = cv_detector
+    
+    def optimize(self, elements: List[LayoutElement],
+                 slide_index: int) -> Tuple[CVParams, List[CVBlock], QualityMetrics]:
+        """
+        Находит оптимальные параметры для слайда.
+        
+        Returns:
+            best_params: Лучшие найденные параметры
+            best_blocks: Блоки с этими параметрами
+            best_metrics: Метрики качества
+        """
+        best_params = None
+        best_blocks = None
+        best_metrics = None
+        best_score = -1
+        
+        strategies = CONFIG["cv_strategies"]
+        iterations = CONFIG["optimization"]["iterations_per_strategy"]
+        early_stop = CONFIG["optimization"]["early_stop_score"]
+        
+        for strategy_name, ranges in strategies.items():
+            for i in range(iterations):
+                # Генерация параметров
+                params = self._generate_params(ranges, strategy_name)
+                
+                try:
+                    # Детекция блоков
+                    blocks = self.cv_detector.detect_blocks(
+                        params,
+                        debug_save=(i == 0),  # Сохраняем первую итерацию каждой стратегии
+                        debug_prefix=f"slide_{slide_index:03d}"
+                    )
+                    
+                    # Привязка элементов к блокам
+                    self._assign_elements_to_blocks(elements, blocks, params.min_intersection_score)
+                    
+                    # Группировка (упрощённая для оценки)
+                    groups, orphans = self._quick_group(elements, blocks)
+                    
+                    # Оценка качества
+                    metrics = QualityAssessor.assess(groups, orphans, len(elements))
+                    
+                    if metrics.score > best_score:
+                        best_score = metrics.score
+                        best_params = params
+                        best_blocks = blocks
+                        best_metrics = metrics
+                    
+                    # Ранняя остановка
+                    if best_score >= early_stop:
+                        break
+                
+                except Exception as e:
+                    continue
+            
+            if best_score >= early_stop:
                 break
         
-        if not placed:
-            columns.append([shape])
-
-    # Сортируем сами колонки слева направо
-    columns.sort(key=lambda col: min(s.left for s in col))
-
-    sorted_body = []
-    for col in columns:
-        # Внутри колонки строго сверху вниз
-        col.sort(key=lambda x: x.top)
-        sorted_body.extend(col)
-
-    return sorted_headers + sorted_body
-
-
-# ==========================================
-# 2. ЛОГИКА ГРУППИРОВКИ (CONTEXT LINKING)
-# ==========================================
-
-def is_anchor(shape):
-    """Определяем, является ли объект 'Родителем' (Таблица, График)."""
-    if shape.has_table or shape.has_chart:
-        return True
-    return False
-
-def check_proximity(anchor, candidate, max_gap_emu=457200):
-    """
-    Проверяет, является ли candidate подписью ПОД anchor.
-    max_gap_emu: ~1.27 см.
-    """
-    # 1. Вертикаль: кандидат должен быть ниже якоря
-    gap = candidate.top - (anchor.top + anchor.height)
-    
-    # Допускаем небольшое наложение (если текст чуть наехал на рамку графика)
-    if gap < - (anchor.height * 0.1): 
-        return False # Слишком высоко (внутри или выше)
-    if gap > max_gap_emu:
-        return False # Слишком далеко внизу
-
-    # 2. Горизонталь: должны пересекаться по ширине
-    anchor_right = anchor.left + anchor.width
-    cand_right = candidate.left + candidate.width
-
-    overlap_start = max(anchor.left, candidate.left)
-    overlap_end = min(anchor_right, cand_right)
-    
-    if overlap_end > overlap_start:
-        return True 
-    
-    return False
-
-def group_content_with_comments(sorted_shapes):
-    """
-    Объединяет графики/таблицы с текстом, идущим сразу под ними.
-    Возвращает структуру для финального парсинга.
-    """
-    structured_content = []
-    last_anchor_idx = -1 
-    
-    for shape in sorted_shapes:
-        # --- ЯКОРЬ (График/Таблица) ---
-        if is_anchor(shape):
-            item_data = {
-                "type": "chart" if shape.has_chart else "table",
-                "obj": shape,
-                "comment": None
-            }
-            structured_content.append(item_data)
-            last_anchor_idx = len(structured_content) - 1
-            
-        # --- ТЕКСТ ---
-        elif hasattr(shape, "text") and shape.text.strip():
-            text_content = shape.text.strip()
-            merged = False
-            
-            # Пытаемся приклеить к предыдущему якорю
-            if last_anchor_idx != -1:
-                anchor_data = structured_content[last_anchor_idx]
-                if check_proximity(anchor_data["obj"], shape):
-                    # Нашли описание!
-                    current_comment = anchor_data["comment"] or ""
-                    anchor_data["comment"] = (current_comment + "\n" + text_content).strip()
-                    merged = True
-            
-            if not merged:
-                # Обычный текст
-                structured_content.append({
-                    "type": "text",
-                    "text": text_content
-                })
-                # Сбрасываем якорь, т.к. поток прерван обычным текстом
-                last_anchor_idx = -1
+        # Fallback на дефолтные параметры
+        if best_params is None or best_score < CONFIG["optimization"]["min_acceptable_score"]:
+            default_cfg = CONFIG["default_cv_params"]
+            best_params = CVParams(
+                min_threshold=default_cfg["min_threshold"],
+                max_threshold=default_cfg["max_threshold"],
+                ksize_width=default_cfg["ksize_width"],
+                ksize_height=default_cfg["ksize_height"],
+                dilate_iterations=default_cfg["dilate_iterations"],
+                min_intersection_score=default_cfg["min_intersection_score"],
+                strategy_name="default_fallback"
+            )
+            best_blocks = self.cv_detector.detect_blocks(best_params)
+            self._assign_elements_to_blocks(elements, best_blocks, best_params.min_intersection_score)
+            groups, orphans = self._quick_group(elements, best_blocks)
+            best_metrics = QualityAssessor.assess(groups, orphans, len(elements))
         
-        # --- КАРТИНКИ И ПР. ---
+        # Сохраняем финальный результат
+        if CONFIG["debug"]["save_contours"]:
+            self.cv_detector.detect_blocks(
+                best_params,
+                debug_save=True,
+                debug_prefix=f"slide_{slide_index:03d}_FINAL"
+            )
+        
+        return best_params, best_blocks, best_metrics
+    
+    def _generate_params(self, ranges: Dict, strategy_name: str) -> CVParams:
+        """Генерирует случайные параметры в заданных диапазонах"""
+        return CVParams(
+            min_threshold=random.randint(*ranges["min_threshold"]),
+            max_threshold=random.randint(*ranges["max_threshold"]),
+            ksize_width=random.randint(*ranges["ksize_width"]),
+            ksize_height=random.randint(*ranges["ksize_height"]),
+            dilate_iterations=random.randint(*ranges["dilate_iterations"]),
+            min_intersection_score=round(random.uniform(*ranges["min_intersection_score"]), 2),
+            strategy_name=strategy_name
+        )
+    
+    def _assign_elements_to_blocks(self, elements: List[LayoutElement],
+                                   blocks: List[CVBlock],
+                                   min_intersection: float) -> None:
+        """Привязывает элементы к блокам"""
+        # Очищаем предыдущие привязки
+        for elem in elements:
+            elem.cv_block_id = None
+        for block in blocks:
+            block.elements = []
+        
+        for elem in elements:
+            best_block = None
+            best_score = 0
+            
+            for block in blocks:
+                score = self._intersection_score(elem.bbox, block.bbox)
+                if score > min_intersection and score > best_score:
+                    best_score = score
+                    best_block = block
+            
+            if best_block:
+                elem.cv_block_id = best_block.block_id
+                best_block.elements.append(elem)
+    
+    def _intersection_score(self, boxA: Tuple, boxB: Tuple) -> float:
+        """Доля пересечения boxA с boxB"""
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+        
+        inter = max(0, xB - xA) * max(0, yB - yA)
+        if inter == 0:
+            return 0
+        
+        areaA = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+        return inter / areaA if areaA > 0 else 0
+    
+    def _quick_group(self, elements: List[LayoutElement],
+                     blocks: List[CVBlock]) -> Tuple[List[ContentGroup], List[LayoutElement]]:
+        """Быстрая группировка для оценки качества"""
+        groups = []
+        used = set()
+        
+        # Группируем по CV-блокам
+        for block in blocks:
+            if block.elements:
+                group = ContentGroup(
+                    elements=list(block.elements),
+                    cv_block_id=block.block_id
+                )
+                
+                # Определяем тип
+                visuals = [e for e in block.elements if e.is_visual]
+                headers = [e for e in block.elements if e.is_header_like]
+                
+                if visuals:
+                    group.visual_content = visuals[0]
+                    group.group_type = "chart_block" if visuals[0].role == ElementRole.CHART else "table_block"
+                if headers:
+                    group.header = min(headers, key=lambda h: h.bbox[1])
+                
+                groups.append(group)
+                used.update(id(e) for e in block.elements)
+        
+        orphans = [e for e in elements if id(e) not in used]
+        
+        return groups, orphans
+
+
+# ==========================================
+# ГРУППИРОВЩИК
+# ==========================================
+
+class HybridGrouper:
+    """Гибридная группировка элементов"""
+    
+    def __init__(self, slide, image_path: str, prs, slide_index: int):
+        self.slide = slide
+        self.slide_index = slide_index
+        
+        sw = prs.slide_width if prs.slide_width > 0 else 9144000
+        sh = prs.slide_height if prs.slide_height > 0 else 6858000
+        
+        self.cv_detector = CVBlockDetector(image_path)
+        self.scale_x = self.cv_detector.w / sw
+        self.scale_y = self.cv_detector.h / sh
+        self.slide_width = self.cv_detector.w
+        self.slide_height = self.cv_detector.h
+        
+        self.classifier = RoleClassifier(self.slide_width, self.slide_height)
+        self.optimizer = ParameterOptimizer(self.cv_detector)
+    
+    def emu_to_pixels(self, shape) -> Tuple[int, int, int, int]:
+        x = int(shape.left * self.scale_x)
+        y = int(shape.top * self.scale_y)
+        w = int(shape.width * self.scale_x)
+        h = int(shape.height * self.scale_y)
+        return (x, y, x + w, y + h)
+    
+    def process(self) -> Tuple[List[ContentGroup], QualityMetrics, CVParams]:
+        """
+        Полный цикл обработки слайда.
+        
+        Returns:
+            groups: Сгруппированный контент
+            metrics: Метрики качества
+            params: Использованные CV-параметры
+        """
+        # 1. Извлечение элементов
+        elements = self._extract_elements()
+        
+        if not elements:
+            return [], QualityMetrics(), CVParams()
+        
+        # 2. Оптимизация CV-параметров
+        best_params, cv_blocks, initial_metrics = self.optimizer.optimize(
+            elements, self.slide_index
+        )
+        
+        # 3. Классификация ролей
+        self.classifier.classify_all(elements, cv_blocks)
+        
+        # 4. Группировка
+        groups, orphans = self._build_groups(elements, cv_blocks)
+        
+        # 5. Постобработка
+        groups = self._refine_groups(groups, orphans, elements)
+        
+        # 6. Финальные метрики
+        final_metrics = QualityAssessor.assess(groups, orphans, len(elements))
+        
+        return groups, final_metrics, best_params
+    
+    def _extract_elements(self) -> List[LayoutElement]:
+        """Извлечение элементов"""
+        elements = []
+        
+        def process_shape(shape, native_group_id=None):
+            if isinstance(shape, GroupShape):
+                new_group_id = id(shape)
+                for child in shape.shapes:
+                    process_shape(child, new_group_id)
+                return
+            
+            bbox = self.emu_to_pixels(shape)
+            if bbox[2] - bbox[0] < 12 or bbox[3] - bbox[1] < 12:
+                return
+            
+            text = ""
+            if hasattr(shape, 'text'):
+                text = shape.text.strip()
+            
+            # Начальная роль
+            role = ElementRole.UNKNOWN
+            try:
+                if hasattr(shape, 'has_chart') and shape.has_chart:
+                    role = ElementRole.CHART
+                elif hasattr(shape, 'has_table') and shape.has_table:
+                    role = ElementRole.TABLE
+            except:
+                pass
+            
+            formatting = FormattingAnalyzer.analyze(shape)
+            
+            elements.append(LayoutElement(
+                shape=shape,
+                role=role,
+                bbox=bbox,
+                text=text,
+                formatting=formatting,
+                native_group_id=native_group_id
+            ))
+        
+        for shape in self.slide.shapes:
+            process_shape(shape)
+        
+        return elements
+    
+    def _build_groups(self, elements: List[LayoutElement],
+                      cv_blocks: List[CVBlock]) -> Tuple[List[ContentGroup], List[LayoutElement]]:
+        """Построение групп"""
+        groups = []
+        used = set()
+        
+        # Приоритет 1: Нативные группы PowerPoint
+        native_groups = defaultdict(list)
+        for elem in elements:
+            if elem.native_group_id is not None:
+                native_groups[elem.native_group_id].append(elem)
+        
+        for group_id, group_elems in native_groups.items():
+            group = self._create_group(group_elems)
+            group.native_group_id = group_id
+            groups.append(group)
+            used.update(id(e) for e in group_elems)
+        
+        # Приоритет 2: CV-блоки
+        for cv_block in cv_blocks:
+            block_elems = [e for e in cv_block.elements if id(e) not in used]
+            if not block_elems:
+                continue
+            
+            # Разделяем блок на подгруппы если нужно
+            subgroups = self._split_cv_block(block_elems)
+            
+            for sg_elems in subgroups:
+                group = self._create_group(sg_elems)
+                group.cv_block_id = cv_block.block_id
+                groups.append(group)
+                used.update(id(e) for e in sg_elems)
+        
+        # Приоритет 3: Связывание orphans
+        orphans = [e for e in elements if id(e) not in used]
+        
+        # Пробуем связать заголовки секций
+        section_groups = self._group_sections(orphans, used)
+        groups.extend(section_groups)
+        
+        # Пробуем связать одинокие заголовки с графиками
+        self._link_orphan_titles(groups, orphans, used)
+        
+        # Оставшиеся orphans
+        final_orphans = [e for e in orphans if id(e) not in used]
+        
+        return groups, final_orphans
+    
+    def _split_cv_block(self, elements: List[LayoutElement]) -> List[List[LayoutElement]]:
+        """Разделение CV-блока на подгруппы"""
+        visuals = [e for e in elements if e.is_visual]
+        
+        if len(visuals) <= 1:
+            return [elements]
+        
+        # Несколько графиков — группируем
+        subgroups = []
+        assigned = set()
+        
+        visuals.sort(key=lambda e: (e.bbox[1], e.bbox[0]))
+        
+        for visual in visuals:
+            sg = [visual]
+            assigned.add(id(visual))
+            
+            # Ищем заголовок
+            title = self._find_title_for(visual, elements, assigned)
+            if title:
+                sg.insert(0, title)
+                assigned.add(id(title))
+            
+            # Ищем легенды
+            legends = self._find_legends_for(visual, elements, assigned)
+            sg.extend(legends)
+            assigned.update(id(l) for l in legends)
+            
+            subgroups.append(sg)
+        
+        # Распределяем остальное
+        remaining = [e for e in elements if id(e) not in assigned]
+        if remaining and subgroups:
+            # Добавляем к ближайшей подгруппе
+            for elem in remaining:
+                closest = min(subgroups, key=lambda sg: min(
+                    abs(elem.center_y - e.center_y) for e in sg if e.is_visual
+                ) if any(e.is_visual for e in sg) else float('inf'))
+                closest.append(elem)
+        elif remaining:
+            subgroups.append(remaining)
+        
+        return subgroups
+    
+    def _find_title_for(self, visual: LayoutElement,
+                        candidates: List[LayoutElement],
+                        used: Set[int]) -> Optional[LayoutElement]:
+        """Поиск заголовка для визуального элемента"""
+        best = None
+        best_score = 0
+        
+        for elem in candidates:
+            if id(elem) in used or elem.is_visual:
+                continue
+            
+            # Должен быть ВЫШЕ
+            if elem.bbox[3] > visual.bbox[1]:
+                continue
+            
+            distance = visual.bbox[1] - elem.bbox[3]
+            if distance > CONFIG["grouping"]["max_title_distance"]:
+                continue
+            
+            score = self._title_score(elem, visual, distance)
+            
+            if score > best_score:
+                best_score = score
+                best = elem
+        
+        return best if best_score > 0.3 else None
+    
+    def _title_score(self, title: LayoutElement,
+                     visual: LayoutElement,
+                     distance: float) -> float:
+        """Оценка соответствия заголовка"""
+        score = 0.0
+        
+        # Близость
+        if distance < 25:
+            score += 0.35
+        elif distance < 50:
+            score += 0.25
+        elif distance < 80:
+            score += 0.12
+        
+        # Выравнивание
+        if self.classifier._is_aligned(title, visual):
+            score += 0.25
+        
+        # Важность
+        if title.formatting.importance_score > 0.15:
+            score += 0.2
+        
+        # Центрирование
+        if abs(title.center_x - visual.center_x) < visual.width * 0.25:
+            score += 0.2
+        
+        return min(1.0, score)
+    
+    def _find_legends_for(self, visual: LayoutElement,
+                          candidates: List[LayoutElement],
+                          used: Set[int]) -> List[LayoutElement]:
+        """Поиск легенд"""
+        legends = []
+        cfg = CONFIG["grouping"]
+        
+        for elem in candidates:
+            if id(elem) in used or elem.is_visual:
+                continue
+            if elem.role in (ElementRole.CONTENT_TITLE, ElementRole.SECTION_HEADER, ElementRole.SLIDE_TITLE):
+                continue
+            
+            # Справа
+            if (elem.bbox[0] > visual.bbox[2] - 30 and
+                elem.bbox[0] < visual.bbox[2] + cfg["max_legend_distance_x"] and
+                visual.bbox[1] - 30 < elem.center_y < visual.bbox[3] + 30):
+                legends.append(elem)
+                continue
+            
+            # Снизу близко
+            if (elem.bbox[1] > visual.bbox[3] and
+                elem.bbox[1] < visual.bbox[3] + cfg["max_legend_distance_y"] and
+                abs(elem.center_x - visual.center_x) < visual.width * 0.5 and
+                elem.formatting.importance_score < 0.18):
+                legends.append(elem)
+        
+        return legends
+    
+    def _group_sections(self, orphans: List[LayoutElement],
+                        used: Set[int]) -> List[ContentGroup]:
+        """Группировка заголовков секций с подпунктами"""
+        groups = []
+        
+        section_headers = [
+            e for e in orphans
+            if e.role == ElementRole.SECTION_HEADER and id(e) not in used
+        ]
+        
+        for header in section_headers:
+            group_elems = [header]
+            used.add(id(header))
+            
+            for elem in orphans:
+                if id(elem) in used:
+                    continue
+                if elem.bbox[1] <= header.bbox[3]:
+                    continue
+                if not self.classifier._is_aligned(header, elem):
+                    continue
+                if elem.formatting.importance_score >= header.formatting.importance_score - 0.05:
+                    continue
+                if elem.bbox[1] - header.bbox[3] > 200:
+                    continue
+                
+                group_elems.append(elem)
+                used.add(id(elem))
+            
+            if group_elems:
+                group = self._create_group(group_elems)
+                group.header = header
+                groups.append(group)
+        
+        return groups
+    
+    def _link_orphan_titles(self, groups: List[ContentGroup],
+                            orphans: List[LayoutElement],
+                            used: Set[int]) -> None:
+        """Связывание одиноких заголовков с графиками без заголовков"""
+        # Находим графики без заголовков
+        charts_without_title = [
+            g for g in groups
+            if g.has_visual and not g.has_header
+        ]
+        
+        # Находим потенциальные заголовки
+        potential_titles = [
+            e for e in orphans
+            if id(e) not in used and
+            e.role in (ElementRole.CONTENT_TITLE, ElementRole.BODY_TEXT) and
+            e.formatting.importance_score > 0.1
+        ]
+        
+        for group in charts_without_title:
+            visual = group.visual_content
+            best_title = None
+            best_score = 0
+            
+            for title in potential_titles:
+                if id(title) in used:
+                    continue
+                
+                # Должен быть выше
+                if title.bbox[3] > visual.bbox[1]:
+                    continue
+                
+                distance = visual.bbox[1] - title.bbox[3]
+                if distance > CONFIG["grouping"]["max_title_distance"] * 1.5:
+                    continue
+                
+                score = self._title_score(title, visual, distance)
+                
+                if score > best_score:
+                    best_score = score
+                    best_title = title
+            
+            if best_title and best_score > 0.25:
+                group.elements.insert(0, best_title)
+                group.header = best_title
+                used.add(id(best_title))
+    
+    def _create_group(self, elements: List[LayoutElement]) -> ContentGroup:
+        """Создание группы"""
+        group = ContentGroup(elements=elements)
+        
+        visuals = [e for e in elements if e.is_visual]
+        headers = [e for e in elements if e.is_header_like]
+        
+        if visuals:
+            group.visual_content = visuals[0]
+            group.group_type = "chart_block" if visuals[0].role == ElementRole.CHART else "table_block"
+        elif headers and len(elements) > 1:
+            group.group_type = "section_block"
+        elif headers:
+            group.group_type = "header_only"
         else:
-             # Можно добавить обработку картинок здесь
-             pass
-
-    return structured_content
+            group.group_type = "text_block"
+        
+        if headers:
+            group.header = min(headers, key=lambda h: h.bbox[1])
+        
+        return group
+    
+    def _refine_groups(self, groups: List[ContentGroup],
+                       orphans: List[LayoutElement],
+                       all_elements: List[LayoutElement]) -> List[ContentGroup]:
+        """Финальная доработка групп"""
+        
+        # Удаляем слишком далёкие элементы из групп
+        for group in groups:
+            if group.visual_content:
+                valid = []
+                for elem in group.elements:
+                    if elem == group.visual_content or elem == group.header:
+                        valid.append(elem)
+                    else:
+                        dist = self._distance(elem, group.visual_content)
+                        if dist < 180:
+                            valid.append(elem)
+                group.elements = valid
+        
+        # Добавляем orphans как отдельные группы
+        for orphan in orphans:
+            groups.append(self._create_group([orphan]))
+        
+        # Сортировка
+        groups.sort(key=lambda g: (g.bbox[1], g.bbox[0]))
+        
+        # Назначаем reading_order
+        for i, group in enumerate(groups):
+            for elem in group.elements:
+                elem.reading_order = i
+        
+        return groups
+    
+    def _distance(self, e1: LayoutElement, e2: LayoutElement) -> float:
+        dx = e1.center_x - e2.center_x
+        dy = e1.center_y - e2.center_y
+        return (dx**2 + dy**2) ** 0.5
 
 
 # ==========================================
-# 3. ЛОГИКА ИЗВЛЕЧЕНИЯ ДАННЫХ (EXTRACTION)
+# КОНВЕРТЕР В JSON
 # ==========================================
 
-def extract_chart_data(shape):
-    """Извлекает данные из нативного графика PPTX."""
-    try:
-        chart = shape.chart
-        chart_title = "Untitled Chart"
-        try:
-            if chart.has_title:
-                chart_title = chart.chart_title.text_frame.text.strip()
-        except: pass
-
-        chart_info = {
-            "title": chart_title,
-            "series": []
-        }
-
-        # 1. Попытка достать категории (Ось X)
-        categories = []
-        try:
-            plots = chart.plots
-            if len(plots) > 0:
-                # Конвертируем категории в строки
-                categories = [str(c.label) for c in plots[0].categories]
-        except: pass
-
-        # 2. Итерация по сериям
-        for series in chart.series:
-            series_name = series.name if series.name else "Unnamed Series"
-            values = list(series.values)
-
-            series_data = {
-                "legend": series_name,
-                "values": values
+class OutputConverter:
+    """Конвертация в JSON-формат"""
+    
+    @staticmethod
+    def convert(groups: List[ContentGroup]) -> List[Dict]:
+        result = []
+        
+        for group in groups:
+            data = {
+                "type": group.group_type,
+                "header": group.header.text if group.header else None,
+                "combined_text": "",
+                "text_elements": [],
+                "charts_data": [],
+                "tables_data": []
             }
-
-            # Если удалось достать категории, делаем маппинг
-            if categories and len(categories) == len(values):
-                # Создаем словарь {"2023": 100, "2024": 120}
-                series_data["mapped_data"] = dict(zip(categories, values))
             
-            chart_info["series"].append(series_data)
+            text_parts = []
+            sorted_elems = sorted(group.elements, key=lambda e: e.reading_order)
+            
+            for elem in sorted_elems:
+                if elem == group.header:
+                    continue
+                
+                if elem.role == ElementRole.CHART:
+                    data["charts_data"].append(OutputConverter._extract_chart(elem.shape))
+                elif elem.role == ElementRole.TABLE:
+                    data["tables_data"].append(OutputConverter._extract_table(elem.shape))
+                elif elem.text:
+                    text_parts.append({
+                        "text": elem.text,
+                        "role": elem.role.value
+                    })
+            
+            data["text_elements"] = text_parts
+            data["combined_text"] = "\n".join(t["text"] for t in text_parts)
+            
+            result.append(data)
         
-        return chart_info
-
-    except Exception as e:
-        return {"error": f"Failed to parse chart: {str(e)}"}
-
-def extract_table_data(shape):
-    """Извлекает текст из таблицы."""
-    table_data = []
-    if not shape.has_table:
-        return []
-        
-    for row in shape.table.rows:
-        # replace \n на пробел, чтобы не ломать CSV/JSON структуру
-        row_data = [cell.text_frame.text.strip().replace('\n', ' ') for cell in row.cells]
-        table_data.append(row_data)
-    return table_data
+        return result
+    
+    @staticmethod
+    def _extract_chart(shape) -> Dict:
+        try:
+            chart = shape.chart
+            data = {"title": "", "series": []}
+            
+            try:
+                if chart.has_title:
+                    data["title"] = chart.chart_title.text_frame.text.strip()
+            except:
+                pass
+            
+            categories = []
+            try:
+                if chart.plots and len(chart.plots) > 0:
+                    categories = [str(c.label) for c in chart.plots[0].categories]
+            except:
+                pass
+            
+            for series in chart.series:
+                s = {
+                    "legend": series.name or "Series",
+                    "values": list(series.values) if series.values else []
+                }
+                if categories and len(categories) == len(s["values"]):
+                    s["mapped_data"] = dict(zip(categories, s["values"]))
+                data["series"].append(s)
+            
+            return data
+        except Exception as e:
+            return {"error": str(e)}
+    
+    @staticmethod
+    def _extract_table(shape) -> List[List[str]]:
+        try:
+            return [
+                [cell.text_frame.text.strip().replace('\n', ' ') for cell in row.cells]
+                for row in shape.table.rows
+            ]
+        except:
+            return []
 
 
 # ==========================================
-# 4. ГЛАВНЫЙ ПАЙПЛАЙН
+# FALLBACK: ЛИНЕЙНЫЙ ПАРСИНГ
 # ==========================================
 
-def process_presentation(file_path):
-    prs = Presentation(file_path)
-    final_output = []
-
-    for i, slide in enumerate(prs.slides):
-        print(f"Processing Slide {i+1}...")
+def get_linear_content(slide) -> List[Dict]:
+    """Fallback: линейное извлечение контента"""
+    
+    def extract_from_shapes(shapes, group_id=None):
+        results = {"text": [], "charts": [], "tables": []}
         
-        # 1. Сортировка с учетом колонок
-        sorted_shapes = sort_shapes_by_layout(list(slide.shapes), prs.slide_height)
-        
-        # 2. Группировка комментариев
-        grouped_elements = group_content_with_comments(sorted_shapes)
-        
-        slide_result = {
-            "slide_number": i + 1,
-            "elements": []
-        }
-
-        # 3. Финальный парсинг
-        for item in grouped_elements:
-            element_out = {}
+        for shape in shapes:
+            if isinstance(shape, GroupShape):
+                sub = extract_from_shapes(shape.shapes, id(shape))
+                results["text"].extend(sub["text"])
+                results["charts"].extend(sub["charts"])
+                results["tables"].extend(sub["tables"])
+                continue
             
-            if item["type"] == "text":
-                element_out = {
-                    "category": "Text",
-                    "content": item["text"]
+            try:
+                if hasattr(shape, 'has_chart') and shape.has_chart:
+                    results["charts"].append(OutputConverter._extract_chart(shape))
+                elif hasattr(shape, 'has_table') and shape.has_table:
+                    results["tables"].append(OutputConverter._extract_table(shape))
+                elif hasattr(shape, 'text') and shape.text.strip():
+                    results["text"].append(shape.text.strip())
+            except:
+                pass
+        
+        return results
+    
+    sorted_shapes = sorted(slide.shapes, key=lambda s: (s.top, s.left))
+    content = extract_from_shapes(sorted_shapes)
+    
+    return [{
+        "type": "linear_fallback",
+        "combined_text": "\n".join(content["text"]),
+        "charts_data": content["charts"],
+        "tables_data": content["tables"]
+    }]
+
+
+# ==========================================
+# ГЛАВНЫЙ ПАРСЕР
+# ==========================================
+
+class PresentationParser:
+    """Главный класс парсера презентаций"""
+    
+    def __init__(self, config: Dict = None):
+        if config:
+            CONFIG.update(config)
+    
+    def parse_slide(self, slide, image_path: str, prs, 
+                    slide_index: int) -> Dict:
+        """Обработка одного слайда"""
+        
+        try:
+            grouper = HybridGrouper(slide, image_path, prs, slide_index)
+            groups, metrics, params = grouper.process()
+            
+            # Проверка качества
+            if metrics.score < CONFIG["optimization"]["min_acceptable_score"]:
+                # Используем fallback
+                return {
+                    "slide_number": slide_index + 1,
+                    "layout_groups": get_linear_content(slide),
+                    "quality_metrics": metrics.to_dict(),
+                    "used_parameters": params.to_dict(),
+                    "processing_method": "linear_fallback"
                 }
             
-            elif item["type"] == "chart":
-                chart_data = extract_chart_data(item["obj"])
-                element_out = {
-                    "category": "Chart",
-                    "data": chart_data,
-                    "analysis_comment": item["comment"] # <-- ТОТ САМЫЙ КОММЕНТАРИЙ
-                }
-
-            elif item["type"] == "table":
-                table_data = extract_table_data(item["obj"])
-                element_out = {
-                    "category": "Table",
-                    "data": table_data,
-                    "analysis_comment": item["comment"] # <-- ТОТ САМЫЙ КОММЕНТАРИЙ
-                }
+            return {
+                "slide_number": slide_index + 1,
+                "layout_groups": OutputConverter.convert(groups),
+                "quality_metrics": metrics.to_dict(),
+                "used_parameters": params.to_dict(),
+                "processing_method": "hybrid_cv_structure"
+            }
+        
+        except Exception as e:
+            return {
+                "slide_number": slide_index + 1,
+                "layout_groups": get_linear_content(slide),
+                "quality_metrics": {"score": 0, "error": str(e)},
+                "processing_method": "error_fallback"
+            }
+    
+    def parse_presentation(self, pptx_path: str, 
+                           image_folder: str,
+                           output_json: str) -> List[Dict]:
+        """Обработка всей презентации"""
+        
+        print(f"Processing: {pptx_path}")
+        
+        # Экспорт изображений
+        print("Exporting slide images...")
+        images = SlideImageExporter.export(pptx_path, image_folder)
+        
+        if not images:
+            raise ValueError("Failed to export slide images")
+        
+        print(f"Exported {len(images)} images")
+        
+        # Загрузка презентации
+        prs = Presentation(pptx_path)
+        
+        results = []
+        
+        for i, slide in enumerate(prs.slides):
+            print(f"Processing slide {i + 1}/{len(prs.slides)}...")
             
-            if element_out:
-                slide_result["elements"].append(element_out)
+            if i >= len(images):
+                print(f"  Warning: No image for slide {i + 1}")
+                result = {
+                    "slide_number": i + 1,
+                    "layout_groups": get_linear_content(slide),
+                    "processing_method": "no_image_fallback"
+                }
+            else:
+                result = self.parse_slide(slide, images[i], prs, i)
+            
+            results.append(result)
+            
+            # Логирование
+            method = result.get("processing_method", "unknown")
+            score = result.get("quality_metrics", {}).get("score", "N/A")
+            print(f"  Method: {method}, Score: {score}")
+        
+        # Сохранение результатов
+        print(f"Saving results to {output_json}...")
+        with open(output_json, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+        
+        print("Done!")
+        
+        return results
 
-        final_output.append(slide_result)
-
-    return final_output
 
 # ==========================================
-# ЗАПУСК
+# ТОЧКА ВХОДА
 # ==========================================
+
+def main():
+    """Пример использования"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Parse PPTX presentation")
+    parser.add_argument("input", help="Path to PPTX file")
+    parser.add_argument("-o", "--output", default="output.json", help="Output JSON file")
+    parser.add_argument("-i", "--images", default="slide_images", help="Image output folder")
+    parser.add_argument("--debug", action="store_true", help="Save debug images")
+    
+    args = parser.parse_args()
+    
+    if args.debug:
+        CONFIG["debug"]["save_contours"] = True
+    
+    pptx_parser = PresentationParser()
+    results = pptx_parser.parse_presentation(args.input, args.images, args.output)
+    
+    # Статистика
+    methods = defaultdict(int)
+    scores = []
+    
+    for r in results:
+        methods[r.get("processing_method", "unknown")] += 1
+        if "quality_metrics" in r and "score" in r["quality_metrics"]:
+            scores.append(r["quality_metrics"]["score"])
+    
+    print("\n=== Statistics ===")
+    print(f"Total slides: {len(results)}")
+    for method, count in methods.items():
+        print(f"  {method}: {count}")
+    if scores:
+        print(f"Average score: {sum(scores) / len(scores):.3f}")
+
 
 if __name__ == "__main__":
-    # Укажи путь к файлу
-    FILE_PATH = "my_presentation.pptx" 
-    
-    try:
-        data = process_presentation(FILE_PATH)
-        
-        # Вывод результата в JSON
-        print(json.dumps(data, ensure_ascii=False, indent=2))
-        
-        # Сохранение в файл
-        with open("output_llm_context.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            
-    except Exception as e:
-        print(f"Ошибка при обработке: {e}")
-        # Если файла нет, скрипт упадет, но код рабочий
+    main()
