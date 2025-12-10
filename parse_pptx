@@ -14,22 +14,16 @@ import numpy as np
 import json
 import os
 import random
-import shutil
+import platform
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple, Set, Any, Callable
+from typing import List, Dict, Optional, Tuple, Set, Any
 from enum import Enum
 from collections import defaultdict
-from pathlib import Path
 
 from pptx import Presentation
 from pptx.shapes.group import GroupShape
 from pptx.shapes.graphfrm import GraphicFrame
 from pptx.enum.shapes import PP_PLACEHOLDER
-
-# Для экспорта изображений (Windows - COM, иначе - pdf2image или другое)
-import platform
-if platform.system() == "Windows":
-    import comtypes.client
 
 
 # ==========================================
@@ -100,12 +94,12 @@ CONFIG = {
     
     # Параметры оценки качества
     "quality": {
-        "target_orphan_ratio": 0.1,        # Максимум 10% orphans
-        "target_block_range": (2, 20),     # Желаемое кол-во блоков
-        "bonus_chart_with_title": 0.15,    # Бонус за график с заголовком
-        "bonus_multi_element_block": 0.1,  # Бонус за блок с несколькими элементами
-        "penalty_isolated_title": 0.2,     # Штраф за изолированный заголовок
-        "penalty_chart_without_title": 0.15,  # Штраф за график без заголовка
+        "target_orphan_ratio": 0.1,
+        "target_block_range": (2, 20),
+        "bonus_chart_with_title": 0.15,
+        "bonus_multi_element_block": 0.1,
+        "penalty_isolated_title": 0.2,
+        "penalty_chart_without_title": 0.15,
     },
     
     # Параметры группировки
@@ -197,7 +191,6 @@ class TextFormatting:
         if self.is_title_placeholder:
             score += 0.5
         if self.font_size:
-            # Нормализуем: 12pt = 0, 24pt = 0.3, 36pt+ = 0.3
             score += min(0.3, max(0, (self.font_size - 12) / 40))
         if self.is_bold:
             score += 0.12
@@ -317,51 +310,152 @@ class QualityMetrics:
 
 
 # ==========================================
-# ЭКСПОРТ ИЗОБРАЖЕНИЙ
+# КЛАСС ДЛЯ ГЕНЕРАЦИИ ИЗОБРАЖЕНИЙ
 # ==========================================
 
 class SlideImageExporter:
-    """Экспорт слайдов в изображения"""
-    
     @staticmethod
-    def export(pptx_path: str, output_folder: str) -> List[str]:
-        """Экспортирует слайды в JPG"""
-        os.makedirs(output_folder, exist_ok=True)
-        
-        if platform.system() == "Windows":
-            return SlideImageExporter._export_windows(pptx_path, output_folder)
-        else:
-            return SlideImageExporter._export_fallback(pptx_path, output_folder)
-    
-    @staticmethod
-    def _export_windows(pptx_path: str, output_folder: str) -> List[str]:
-        """Экспорт через COM на Windows"""
-        powerpoint = comtypes.client.CreateObject("PowerPoint.Application")
-        powerpoint.Visible = 1
-        
-        abs_path = os.path.abspath(pptx_path)
+    def export(pptx_path: str, output_folder: str, dpi: int = 96) -> list[str]:
+        """
+        Экспорт слайдов презентации в изображения.
+
+        Args:
+            pptx_path: Путь к файлу презентации
+            output_folder: Папка для сохранения изображений
+            dpi: Разрешение изображений (актуально для Linux/OSX)
+
+        Returns:
+            Список путей к сохраненным изображениям
+        """
+        abs_pptx = os.path.abspath(pptx_path)
         abs_output = os.path.abspath(output_folder)
-        
-        presentation = powerpoint.Presentations.Open(abs_path, WithWindow=False)
-        
-        images = []
-        for i, slide in enumerate(presentation.Slides):
-            output_path = os.path.join(abs_output, f"slide_{i+1:03d}.jpg")
-            slide.Export(output_path, "JPG", 1920, 1080)
-            images.append(output_path)
-        
-        presentation.Close()
-        powerpoint.Quit()
-        
-        return images
-    
+
+        if not os.path.exists(abs_pptx):
+            raise FileNotFoundError(f"Файл презентации не найден: {abs_pptx}")
+
+        if not os.path.exists(abs_output):
+            os.makedirs(abs_output, exist_ok=True)
+
+        os_type = platform.system()
+
+        if os_type == "Windows":
+            return SlideImageExporter._export_windows(abs_pptx, abs_output)
+        elif os_type in ["Linux", "Darwin"]:
+            return SlideImageExporter._export_linux(abs_pptx, abs_output, dpi)
+        else:
+            raise NotImplementedError(f"Неподдерживаемая ОС: {os_type}")
+
     @staticmethod
-    def _export_fallback(pptx_path: str, output_folder: str) -> List[str]:
-        """Fallback для не-Windows систем"""
-        # Можно использовать pdf2image, LibreOffice, или другие методы
-        # Для примера — заглушка
-        print("Warning: Non-Windows export not fully implemented")
+    def _export_windows(pptx_path: str, output_folder: str) -> list[str]:
+        """Экспорт для Windows через win32com"""
+        try:
+            import win32com.client
+        except ImportError:
+            raise ImportError(
+                "Для работы под Windows требуется библиотека pywin32. "
+                "Установите её: pip install pywin32"
+            )
+
+        paths = []
+        powerpoint = None
+        pres = None
+
+        try:
+            powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+            pres = powerpoint.Presentations.Open(pptx_path, WithWindow=False)
+
+            for i, slide in enumerate(pres.Slides):
+                fname = os.path.join(output_folder, f"slide_{i + 1}.jpg")
+                if os.path.exists(fname):
+                    os.remove(fname)
+                slide.Export(fname, "JPG", 0, 0)
+                paths.append(fname)
+
+            if pres:
+                pres.Close()
+            if powerpoint:
+                powerpoint.Quit()
+
+            return paths
+
+        except Exception as e:
+            print(f"Ошибка при экспорте в Windows: {e}")
+            return []
+        finally:
+            try:
+                if pres:
+                    del pres
+                if powerpoint:
+                    del powerpoint
+            except:
+                pass
+
+    @staticmethod
+    def _export_linux(pptx_path: str, output_folder: str, dpi: int = 96) -> list[str]:
+        """Экспорт для Linux/macOS через LibreOffice"""
+        # Пробуем LibreOffice
+        result = SlideImageExporter.export_via_libreoffice(pptx_path, output_folder, dpi)
+        if result:
+            return result
+        
+        print("Внимание: не удалось экспортировать слайды.")
+        print("Рассмотрите альтернативные варианты для Linux:")
+        print("1. Установите LibreOffice: sudo apt-get install libreoffice")
+        print("2. Используйте cloud-конвертацию")
         return []
+
+    @staticmethod
+    def export_via_libreoffice(pptx_path: str, output_folder: str, dpi: int = 96) -> list[str]:
+        """
+        Альтернативный метод для Linux через LibreOffice
+        Требует установленного LibreOffice
+        """
+        import subprocess
+
+        abs_pptx = os.path.abspath(pptx_path)
+        abs_output = os.path.abspath(output_folder)
+
+        if not os.path.exists(abs_output):
+            os.makedirs(abs_output, exist_ok=True)
+
+        paths = []
+
+        try:
+            cmd = [
+                'libreoffice', '--headless', '--convert-to', 'jpg',
+                '--outdir', abs_output, abs_pptx
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                print(f"Ошибка LibreOffice: {result.stderr}")
+                return []
+
+            base_name = os.path.splitext(os.path.basename(abs_pptx))[0]
+
+            for i in range(1, 100):
+                fname = os.path.join(abs_output, f"{base_name}_{i}.jpg")
+                if os.path.exists(fname):
+                    paths.append(fname)
+                else:
+                    alt_fname = os.path.join(abs_output, f"slide_{i}.jpg")
+                    if os.path.exists(alt_fname):
+                        paths.append(alt_fname)
+                    else:
+                        break
+
+            return paths
+
+        except FileNotFoundError:
+            print("LibreOffice не найден. Установите его:")
+            print("Ubuntu/Debian: sudo apt-get install libreoffice")
+            print("Fedora: sudo dnf install libreoffice")
+            print("macOS: brew install libreoffice")
+            return []
+        except Exception as e:
+            print(f"Ошибка при конвертации через LibreOffice: {e}")
+            return []
 
 
 # ==========================================
@@ -384,32 +478,25 @@ class CVBlockDetector:
         """Детекция блоков с заданными параметрами"""
         
         gray = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
-        
-        # Canny edge detection
         edges = cv2.Canny(gray, params.min_threshold, params.max_threshold)
         
-        # Морфологическое расширение
         kernel = cv2.getStructuringElement(
             cv2.MORPH_RECT,
             (params.ksize_width, params.ksize_height)
         )
         dilated = cv2.dilate(edges, kernel, iterations=params.dilate_iterations)
         
-        # Поиск контуров
         contours, _ = cv2.findContours(
             dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
         
-        # Debug: сохранение изображения с контурами
         if debug_save and CONFIG["debug"]["save_contours"]:
             self._save_debug_image(contours, params, debug_prefix)
         
-        # Формирование блоков
         blocks = []
         for i, cnt in enumerate(contours):
             x, y, w, h = cv2.boundingRect(cnt)
             
-            # Фильтрация
             if w < 25 or h < 20:
                 continue
             if w > self.w * 0.98 and h > self.h * 0.98:
@@ -436,11 +523,8 @@ class CVBlockDetector:
     def detect_columns(self) -> List[Tuple[int, int]]:
         """Детекция колонок через вертикальную проекцию"""
         gray = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
-        
-        # Вертикальная проекция (количество не-белых пикселей в каждом столбце)
         vertical_proj = np.sum(gray < 245, axis=0)
         
-        # Сглаживание
         kernel_size = max(1, self.w // 50)
         if kernel_size > 1:
             vertical_proj = np.convolve(
@@ -449,10 +533,7 @@ class CVBlockDetector:
                 mode='same'
             )
         
-        # Порог для "пустой" зоны
         threshold = self.h * 0.05
-        
-        # Находим промежутки
         gaps = []
         in_gap = False
         gap_start = 0
@@ -469,12 +550,11 @@ class CVBlockDetector:
                 if gap_width >= min_gap_width:
                     gaps.append((gap_start, x))
         
-        # Формируем колонки
         columns = []
         prev_end = 0
         
         for gap_start, gap_end in gaps:
-            if gap_start > prev_end + 50:  # Минимальная ширина колонки
+            if gap_start > prev_end + 50:
                 columns.append((prev_end, gap_start))
             prev_end = gap_end
         
@@ -501,7 +581,6 @@ class FormattingAnalyzer:
     def analyze(shape) -> TextFormatting:
         formatting = TextFormatting()
         
-        # Placeholder type
         try:
             if hasattr(shape, 'placeholder_format') and shape.placeholder_format:
                 if shape.placeholder_format.type in FormattingAnalyzer.TITLE_PLACEHOLDERS:
@@ -509,13 +588,11 @@ class FormattingAnalyzer:
         except:
             pass
         
-        # Text frame
         try:
             if hasattr(shape, 'text_frame') and shape.text_frame.paragraphs:
                 para = shape.text_frame.paragraphs[0]
                 formatting.indent_level = para.level or 0
                 
-                # Bullet
                 try:
                     if hasattr(para, 'bullet') and para.bullet:
                         if para.bullet.type is not None:
@@ -523,7 +600,6 @@ class FormattingAnalyzer:
                 except:
                     pass
                 
-                # Font
                 if para.runs:
                     run = para.runs[0]
                     try:
@@ -559,12 +635,10 @@ class RoleClassifier:
     def classify_all(self, elements: List[LayoutElement], 
                      cv_blocks: List[CVBlock]) -> None:
         """Классифицирует все элементы"""
-        # Первый проход: базовая классификация
         for elem in elements:
             if elem.role == ElementRole.UNKNOWN:
                 elem.role = self._classify_basic(elem)
         
-        # Второй проход: контекстная классификация
         for elem in elements:
             if elem.role in (ElementRole.BODY_TEXT, ElementRole.UNKNOWN):
                 new_role = self._classify_contextual(elem, elements, cv_blocks)
@@ -575,7 +649,6 @@ class RoleClassifier:
         """Базовая классификация по типу shape"""
         shape = element.shape
         
-        # Визуальный контент
         try:
             if hasattr(shape, 'has_chart') and shape.has_chart:
                 return ElementRole.CHART
@@ -586,21 +659,17 @@ class RoleClassifier:
         
         formatting = element.formatting
         
-        # Title placeholder
         if formatting.is_title_placeholder:
             return ElementRole.SLIDE_TITLE
         
-        # Позиция + важность
         if element.bbox[1] < self.header_zone_y:
             if formatting.importance_score > CONFIG["classification"]["min_importance_for_header"]:
                 return ElementRole.SLIDE_TITLE
         
-        # Сноска
         if element.bbox[1] > self.footer_zone_y:
             if formatting.importance_score < 0.15 and element.height < self.slide_height * 0.05:
                 return ElementRole.FOOTNOTE
         
-        # Пункт списка
         if formatting.has_bullet or formatting.indent_level > 0:
             return ElementRole.BULLET_POINT
         
@@ -611,15 +680,12 @@ class RoleClassifier:
                              cv_blocks: List[CVBlock]) -> ElementRole:
         """Контекстная классификация"""
         
-        # Проверка на легенду
         if self._is_legend(element, all_elements):
             return ElementRole.LEGEND
         
-        # Проверка на заголовок контента
         if self._is_content_title(element, all_elements, cv_blocks):
             return ElementRole.CONTENT_TITLE
         
-        # Проверка на заголовок секции
         if self._is_section_header(element, all_elements):
             return ElementRole.SECTION_HEADER
         
@@ -634,21 +700,18 @@ class RoleClassifier:
         charts = [e for e in all_elements if e.role == ElementRole.CHART]
         
         for chart in charts:
-            # В том же CV-блоке или близко
             same_block = (
                 element.cv_block_id is not None and
                 chart.cv_block_id is not None and
                 element.cv_block_id == chart.cv_block_id
             )
             
-            # Справа от графика
             is_right = (
                 element.bbox[0] > chart.bbox[2] - 40 and
                 element.bbox[0] < chart.bbox[2] + CONFIG["grouping"]["max_legend_distance_x"] and
                 chart.bbox[1] - 30 < element.center_y < chart.bbox[3] + 30
             )
             
-            # Снизу близко
             is_below = (
                 element.bbox[1] > chart.bbox[3] and
                 element.bbox[1] < chart.bbox[3] + CONFIG["grouping"]["max_legend_distance_y"] and
@@ -679,14 +742,12 @@ class RoleClassifier:
         ]
         
         for visual in visuals_below:
-            # Приоритет: тот же CV-блок
             same_cv = (
                 element.cv_block_id is not None and
                 visual.cv_block_id is not None and
                 element.cv_block_id == visual.cv_block_id
             )
             
-            # Хорошее выравнивание
             aligned = self._is_aligned(element, visual)
             
             if same_cv or aligned:
@@ -711,23 +772,19 @@ class RoleClassifier:
         if not elements_below:
             return False
         
-        # Элементы ниже должны быть менее важными
         avg_importance = sum(e.formatting.importance_score for e in elements_below) / len(elements_below)
         return element.formatting.importance_score > avg_importance + 0.08
     
     def _is_aligned(self, elem1: LayoutElement, elem2: LayoutElement) -> bool:
         """Проверка выравнивания"""
-        # Перекрытие по X
         overlap = min(elem1.bbox[2], elem2.bbox[2]) - max(elem1.bbox[0], elem2.bbox[0])
         min_width = min(elem1.width, elem2.width)
         if min_width > 0 and overlap > min_width * 0.3:
             return True
         
-        # По центру
         if abs(elem1.center_x - elem2.center_x) < min_width * 0.35:
             return True
         
-        # По левому краю
         if abs(elem1.bbox[0] - elem2.bbox[0]) < 35:
             return True
         
@@ -755,48 +812,38 @@ class QualityAssessor:
         cfg = CONFIG["quality"]
         
         for group in groups:
-            # Графики с заголовками
             if group.has_visual:
                 if group.has_header:
                     metrics.charts_with_title += 1
                 else:
                     metrics.charts_without_title += 1
             
-            # Изолированные заголовки
             if group.has_header and len(group.elements) == 1:
                 metrics.isolated_titles += 1
             
-            # Многоэлементные группы
             if len(group.elements) > 1:
                 metrics.multi_element_groups += 1
         
-        # Вычисление score
         score = 1.0
         
-        # Штраф за orphans
         if metrics.orphan_ratio > cfg["target_orphan_ratio"]:
             excess = metrics.orphan_ratio - cfg["target_orphan_ratio"]
             score -= min(0.4, excess * 2)
         
-        # Штраф за слишком много/мало блоков
         target_min, target_max = cfg["target_block_range"]
         if metrics.total_groups < target_min:
             score -= 0.15
         elif metrics.total_groups > target_max:
             score -= min(0.2, (metrics.total_groups - target_max) * 0.02)
         
-        # Бонус за графики с заголовками
         if metrics.charts_with_title > 0:
-            ratio = metrics.charts_with_title / (metrics.charts_with_title + metrics.charts_without_title)
+            total_charts = metrics.charts_with_title + metrics.charts_without_title
+            ratio = metrics.charts_with_title / total_charts
             score += ratio * cfg["bonus_chart_with_title"]
         
-        # Штраф за графики без заголовков
         score -= metrics.charts_without_title * cfg["penalty_chart_without_title"]
-        
-        # Штраф за изолированные заголовки
         score -= metrics.isolated_titles * cfg["penalty_isolated_title"]
         
-        # Бонус за многоэлементные группы
         if metrics.total_groups > 0:
             multi_ratio = metrics.multi_element_groups / metrics.total_groups
             score += multi_ratio * cfg["bonus_multi_element_block"]
@@ -818,14 +865,7 @@ class ParameterOptimizer:
     
     def optimize(self, elements: List[LayoutElement],
                  slide_index: int) -> Tuple[CVParams, List[CVBlock], QualityMetrics]:
-        """
-        Находит оптимальные параметры для слайда.
-        
-        Returns:
-            best_params: Лучшие найденные параметры
-            best_blocks: Блоки с этими параметрами
-            best_metrics: Метрики качества
-        """
+        """Находит оптимальные параметры для слайда"""
         best_params = None
         best_blocks = None
         best_metrics = None
@@ -837,24 +877,19 @@ class ParameterOptimizer:
         
         for strategy_name, ranges in strategies.items():
             for i in range(iterations):
-                # Генерация параметров
                 params = self._generate_params(ranges, strategy_name)
                 
                 try:
-                    # Детекция блоков
                     blocks = self.cv_detector.detect_blocks(
                         params,
-                        debug_save=(i == 0),  # Сохраняем первую итерацию каждой стратегии
+                        debug_save=(i == 0),
                         debug_prefix=f"slide_{slide_index:03d}"
                     )
                     
-                    # Привязка элементов к блокам
                     self._assign_elements_to_blocks(elements, blocks, params.min_intersection_score)
                     
-                    # Группировка (упрощённая для оценки)
                     groups, orphans = self._quick_group(elements, blocks)
                     
-                    # Оценка качества
                     metrics = QualityAssessor.assess(groups, orphans, len(elements))
                     
                     if metrics.score > best_score:
@@ -863,7 +898,6 @@ class ParameterOptimizer:
                         best_blocks = blocks
                         best_metrics = metrics
                     
-                    # Ранняя остановка
                     if best_score >= early_stop:
                         break
                 
@@ -873,7 +907,6 @@ class ParameterOptimizer:
             if best_score >= early_stop:
                 break
         
-        # Fallback на дефолтные параметры
         if best_params is None or best_score < CONFIG["optimization"]["min_acceptable_score"]:
             default_cfg = CONFIG["default_cv_params"]
             best_params = CVParams(
@@ -890,7 +923,6 @@ class ParameterOptimizer:
             groups, orphans = self._quick_group(elements, best_blocks)
             best_metrics = QualityAssessor.assess(groups, orphans, len(elements))
         
-        # Сохраняем финальный результат
         if CONFIG["debug"]["save_contours"]:
             self.cv_detector.detect_blocks(
                 best_params,
@@ -916,7 +948,6 @@ class ParameterOptimizer:
                                    blocks: List[CVBlock],
                                    min_intersection: float) -> None:
         """Привязывает элементы к блокам"""
-        # Очищаем предыдущие привязки
         for elem in elements:
             elem.cv_block_id = None
         for block in blocks:
@@ -956,7 +987,6 @@ class ParameterOptimizer:
         groups = []
         used = set()
         
-        # Группируем по CV-блокам
         for block in blocks:
             if block.elements:
                 group = ContentGroup(
@@ -964,7 +994,6 @@ class ParameterOptimizer:
                     cv_block_id=block.block_id
                 )
                 
-                # Определяем тип
                 visuals = [e for e in block.elements if e.is_visual]
                 headers = [e for e in block.elements if e.is_header_like]
                 
@@ -1013,35 +1042,23 @@ class HybridGrouper:
         return (x, y, x + w, y + h)
     
     def process(self) -> Tuple[List[ContentGroup], QualityMetrics, CVParams]:
-        """
-        Полный цикл обработки слайда.
+        """Полный цикл обработки слайда"""
         
-        Returns:
-            groups: Сгруппированный контент
-            metrics: Метрики качества
-            params: Использованные CV-параметры
-        """
-        # 1. Извлечение элементов
         elements = self._extract_elements()
         
         if not elements:
             return [], QualityMetrics(), CVParams()
         
-        # 2. Оптимизация CV-параметров
         best_params, cv_blocks, initial_metrics = self.optimizer.optimize(
             elements, self.slide_index
         )
         
-        # 3. Классификация ролей
         self.classifier.classify_all(elements, cv_blocks)
         
-        # 4. Группировка
         groups, orphans = self._build_groups(elements, cv_blocks)
         
-        # 5. Постобработка
         groups = self._refine_groups(groups, orphans, elements)
         
-        # 6. Финальные метрики
         final_metrics = QualityAssessor.assess(groups, orphans, len(elements))
         
         return groups, final_metrics, best_params
@@ -1065,7 +1082,6 @@ class HybridGrouper:
             if hasattr(shape, 'text'):
                 text = shape.text.strip()
             
-            # Начальная роль
             role = ElementRole.UNKNOWN
             try:
                 if hasattr(shape, 'has_chart') and shape.has_chart:
@@ -1115,7 +1131,6 @@ class HybridGrouper:
             if not block_elems:
                 continue
             
-            # Разделяем блок на подгруппы если нужно
             subgroups = self._split_cv_block(block_elems)
             
             for sg_elems in subgroups:
@@ -1127,14 +1142,11 @@ class HybridGrouper:
         # Приоритет 3: Связывание orphans
         orphans = [e for e in elements if id(e) not in used]
         
-        # Пробуем связать заголовки секций
         section_groups = self._group_sections(orphans, used)
         groups.extend(section_groups)
         
-        # Пробуем связать одинокие заголовки с графиками
         self._link_orphan_titles(groups, orphans, used)
         
-        # Оставшиеся orphans
         final_orphans = [e for e in orphans if id(e) not in used]
         
         return groups, final_orphans
@@ -1146,7 +1158,6 @@ class HybridGrouper:
         if len(visuals) <= 1:
             return [elements]
         
-        # Несколько графиков — группируем
         subgroups = []
         assigned = set()
         
@@ -1156,23 +1167,19 @@ class HybridGrouper:
             sg = [visual]
             assigned.add(id(visual))
             
-            # Ищем заголовок
             title = self._find_title_for(visual, elements, assigned)
             if title:
                 sg.insert(0, title)
                 assigned.add(id(title))
             
-            # Ищем легенды
             legends = self._find_legends_for(visual, elements, assigned)
             sg.extend(legends)
             assigned.update(id(l) for l in legends)
             
             subgroups.append(sg)
         
-        # Распределяем остальное
         remaining = [e for e in elements if id(e) not in assigned]
         if remaining and subgroups:
-            # Добавляем к ближайшей подгруппе
             for elem in remaining:
                 closest = min(subgroups, key=lambda sg: min(
                     abs(elem.center_y - e.center_y) for e in sg if e.is_visual
@@ -1194,7 +1201,6 @@ class HybridGrouper:
             if id(elem) in used or elem.is_visual:
                 continue
             
-            # Должен быть ВЫШЕ
             if elem.bbox[3] > visual.bbox[1]:
                 continue
             
@@ -1216,7 +1222,6 @@ class HybridGrouper:
         """Оценка соответствия заголовка"""
         score = 0.0
         
-        # Близость
         if distance < 25:
             score += 0.35
         elif distance < 50:
@@ -1224,15 +1229,12 @@ class HybridGrouper:
         elif distance < 80:
             score += 0.12
         
-        # Выравнивание
         if self.classifier._is_aligned(title, visual):
             score += 0.25
         
-        # Важность
         if title.formatting.importance_score > 0.15:
             score += 0.2
         
-        # Центрирование
         if abs(title.center_x - visual.center_x) < visual.width * 0.25:
             score += 0.2
         
@@ -1251,14 +1253,12 @@ class HybridGrouper:
             if elem.role in (ElementRole.CONTENT_TITLE, ElementRole.SECTION_HEADER, ElementRole.SLIDE_TITLE):
                 continue
             
-            # Справа
             if (elem.bbox[0] > visual.bbox[2] - 30 and
                 elem.bbox[0] < visual.bbox[2] + cfg["max_legend_distance_x"] and
                 visual.bbox[1] - 30 < elem.center_y < visual.bbox[3] + 30):
                 legends.append(elem)
                 continue
             
-            # Снизу близко
             if (elem.bbox[1] > visual.bbox[3] and
                 elem.bbox[1] < visual.bbox[3] + cfg["max_legend_distance_y"] and
                 abs(elem.center_x - visual.center_x) < visual.width * 0.5 and
@@ -1307,13 +1307,11 @@ class HybridGrouper:
                             orphans: List[LayoutElement],
                             used: Set[int]) -> None:
         """Связывание одиноких заголовков с графиками без заголовков"""
-        # Находим графики без заголовков
         charts_without_title = [
             g for g in groups
             if g.has_visual and not g.has_header
         ]
         
-        # Находим потенциальные заголовки
         potential_titles = [
             e for e in orphans
             if id(e) not in used and
@@ -1330,7 +1328,6 @@ class HybridGrouper:
                 if id(title) in used:
                     continue
                 
-                # Должен быть выше
                 if title.bbox[3] > visual.bbox[1]:
                     continue
                 
@@ -1376,7 +1373,6 @@ class HybridGrouper:
                        all_elements: List[LayoutElement]) -> List[ContentGroup]:
         """Финальная доработка групп"""
         
-        # Удаляем слишком далёкие элементы из групп
         for group in groups:
             if group.visual_content:
                 valid = []
@@ -1389,14 +1385,11 @@ class HybridGrouper:
                             valid.append(elem)
                 group.elements = valid
         
-        # Добавляем orphans как отдельные группы
         for orphan in orphans:
             groups.append(self._create_group([orphan]))
         
-        # Сортировка
         groups.sort(key=lambda g: (g.bbox[1], g.bbox[0]))
         
-        # Назначаем reading_order
         for i, group in enumerate(groups):
             for elem in group.elements:
                 elem.reading_order = i
@@ -1504,12 +1497,12 @@ class OutputConverter:
 def get_linear_content(slide) -> List[Dict]:
     """Fallback: линейное извлечение контента"""
     
-    def extract_from_shapes(shapes, group_id=None):
+    def extract_from_shapes(shapes):
         results = {"text": [], "charts": [], "tables": []}
         
         for shape in shapes:
             if isinstance(shape, GroupShape):
-                sub = extract_from_shapes(shape.shapes, id(shape))
+                sub = extract_from_shapes(shape.shapes)
                 results["text"].extend(sub["text"])
                 results["charts"].extend(sub["charts"])
                 results["tables"].extend(sub["tables"])
@@ -1557,9 +1550,7 @@ class PresentationParser:
             grouper = HybridGrouper(slide, image_path, prs, slide_index)
             groups, metrics, params = grouper.process()
             
-            # Проверка качества
             if metrics.score < CONFIG["optimization"]["min_acceptable_score"]:
-                # Используем fallback
                 return {
                     "slide_number": slide_index + 1,
                     "layout_groups": get_linear_content(slide),
@@ -1583,79 +1574,66 @@ class PresentationParser:
                 "quality_metrics": {"score": 0, "error": str(e)},
                 "processing_method": "error_fallback"
             }
-    
-    def parse_presentation(self, pptx_path: str, 
-                           image_folder: str,
-                           output_json: str) -> List[Dict]:
-        """Обработка всей презентации"""
-        
-        print(f"Processing: {pptx_path}")
-        
-        # Экспорт изображений
-        print("Exporting slide images...")
-        images = SlideImageExporter.export(pptx_path, image_folder)
-        
-        if not images:
-            raise ValueError("Failed to export slide images")
-        
-        print(f"Exported {len(images)} images")
-        
-        # Загрузка презентации
-        prs = Presentation(pptx_path)
-        
-        results = []
-        
-        for i, slide in enumerate(prs.slides):
-            print(f"Processing slide {i + 1}/{len(prs.slides)}...")
-            
-            if i >= len(images):
-                print(f"  Warning: No image for slide {i + 1}")
-                result = {
-                    "slide_number": i + 1,
-                    "layout_groups": get_linear_content(slide),
-                    "processing_method": "no_image_fallback"
-                }
-            else:
-                result = self.parse_slide(slide, images[i], prs, i)
-            
-            results.append(result)
-            
-            # Логирование
-            method = result.get("processing_method", "unknown")
-            score = result.get("quality_metrics", {}).get("score", "N/A")
-            print(f"  Method: {method}, Score: {score}")
-        
-        # Сохранение результатов
-        print(f"Saving results to {output_json}...")
-        with open(output_json, "w", encoding="utf-8") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
-        
-        print("Done!")
-        
-        return results
 
 
 # ==========================================
-# ТОЧКА ВХОДА
+# ОСНОВНАЯ ФУНКЦИЯ ПАРСИНГА
 # ==========================================
 
-def main():
-    """Пример использования"""
-    import argparse
+def parse_presentation(pptx_path: str, 
+                       image_folder: str,
+                       output_json: str) -> List[Dict]:
+    """
+    Основная функция парсинга презентации.
     
-    parser = argparse.ArgumentParser(description="Parse PPTX presentation")
-    parser.add_argument("input", help="Path to PPTX file")
-    parser.add_argument("-o", "--output", default="output.json", help="Output JSON file")
-    parser.add_argument("-i", "--images", default="slide_images", help="Image output folder")
-    parser.add_argument("--debug", action="store_true", help="Save debug images")
+    Args:
+        pptx_path: Путь к файлу PPTX
+        image_folder: Папка для сохранения изображений слайдов
+        output_json: Путь к выходному JSON файлу
     
-    args = parser.parse_args()
+    Returns:
+        Список словарей с результатами парсинга для каждого слайда
+    """
+    print(f"Обработка: {pptx_path}")
     
-    if args.debug:
-        CONFIG["debug"]["save_contours"] = True
+    # Экспорт изображений
+    print("Экспорт изображений слайдов...")
+    images = SlideImageExporter.export(pptx_path, image_folder)
     
-    pptx_parser = PresentationParser()
-    results = pptx_parser.parse_presentation(args.input, args.images, args.output)
+    if not images:
+        raise ValueError("Не удалось экспортировать изображения слайдов")
+    
+    print(f"Экспортировано {len(images)} изображений")
+    
+    # Загрузка презентации
+    prs = Presentation(pptx_path)
+    parser = PresentationParser()
+    
+    results = []
+    
+    for i, slide in enumerate(prs.slides):
+        print(f"Обработка слайда {i + 1}/{len(prs.slides)}...")
+        
+        if i >= len(images):
+            print(f"  Предупреждение: нет изображения для слайда {i + 1}")
+            result = {
+                "slide_number": i + 1,
+                "layout_groups": get_linear_content(slide),
+                "processing_method": "no_image_fallback"
+            }
+        else:
+            result = parser.parse_slide(slide, images[i], prs, i)
+        
+        results.append(result)
+        
+        method = result.get("processing_method", "unknown")
+        score = result.get("quality_metrics", {}).get("score", "N/A")
+        print(f"  Метод: {method}, Оценка: {score}")
+    
+    # Сохранение результатов
+    print(f"Сохранение результатов в {output_json}...")
+    with open(output_json, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
     
     # Статистика
     methods = defaultdict(int)
@@ -1663,16 +1641,29 @@ def main():
     
     for r in results:
         methods[r.get("processing_method", "unknown")] += 1
-        if "quality_metrics" in r and "score" in r["quality_metrics"]:
-            scores.append(r["quality_metrics"]["score"])
+        if "quality_metrics" in r and isinstance(r["quality_metrics"], dict):
+            if "score" in r["quality_metrics"]:
+                scores.append(r["quality_metrics"]["score"])
     
-    print("\n=== Statistics ===")
-    print(f"Total slides: {len(results)}")
+    print("\n=== Статистика ===")
+    print(f"Всего слайдов: {len(results)}")
     for method, count in methods.items():
         print(f"  {method}: {count}")
     if scores:
-        print(f"Average score: {sum(scores) / len(scores):.3f}")
+        print(f"Средняя оценка: {sum(scores) / len(scores):.3f}")
+    
+    print("Готово!")
+    
+    return results
 
+
+# ==========================================
+# ТОЧКА ВХОДА
+# ==========================================
 
 if __name__ == "__main__":
-    main()
+    PPTX_FILE = r""  # Укажите путь к файлу презентации
+    IMG_FOLDER = "temp_images"
+    JSON_OUTPUT = "final_output.json"
+    
+    result = parse_presentation(PPTX_FILE, IMG_FOLDER, JSON_OUTPUT)
