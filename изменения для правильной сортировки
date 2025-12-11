@@ -457,3 +457,42 @@ def get_linear_content(slide) -> List[Dict]:
         "charts_data": content["charts"],
         "tables_data": content["tables"]
     }]
+
+
+@staticmethod
+def convert(groups: List[ContentGroup]) -> List[Dict]:
+    result = []
+    
+    for group in groups:
+        data = {
+            "type": group.group_type,
+            "header": group.header.text if group.header else None,
+            "combined_text": "",
+            "text_elements": [],
+            "charts_data": [],
+            "tables_data": []
+        }
+        
+        text_parts = []
+        
+        # Элементы уже отсортированы в _refine_groups, используем их порядок
+        for elem in group.elements:
+            if elem == group.header:
+                continue
+            
+            if elem.role == ElementRole.CHART:
+                data["charts_data"].append(OutputConverter._extract_chart(elem.shape))
+            elif elem.role == ElementRole.TABLE:
+                data["tables_data"].append(OutputConverter._extract_table(elem.shape))
+            elif elem.text:
+                text_parts.append({
+                    "text": elem.text,
+                    "role": elem.role.value
+                })
+        
+        data["text_elements"] = text_parts
+        data["combined_text"] = "\n".join(t["text"] for t in text_parts)
+        
+        result.append(data)
+    
+    return result
