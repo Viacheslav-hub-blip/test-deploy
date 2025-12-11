@@ -1,0 +1,459 @@
+# ==========================================
+# СОРТИРОВЩИК ЭЛЕМЕНТОВ
+# ==========================================
+class ElementSorter:
+    """
+    Интеллектуальная сортировка элементов с учётом:
+    - Колонок (элементы группируются по колонкам слева направо)
+    - Строк с допуском (элементы на близкой высоте считаются одной строкой)
+    - Логических групп
+    """
+    
+    def __init__(self, slide_width: int, slide_height: int):
+        self.slide_width = slide_width
+        self.slide_height = slide_height
+        # Допуск для определения "одной строки" — элементы в пределах этого допуска
+        # считаются находящимися на одной высоте
+        self.row_tolerance = max(15, slide_height * 0.025)  # 2.5% высоты или минимум 15px
+        # Минимальный промежуток между колонками
+        self.column_gap_threshold = max(30, slide_width * 0.04)  # 4% ширины или минимум 30px
+    
+    def sort_elements(self, elements: List[LayoutElement]) -> List[LayoutElement]:
+        """Основная функция сортировки элементов"""
+        if len(elements) <= 1:
+            return list(elements)
+        
+        # 1. Определяем колонки
+        columns = self._detect_columns(elements)
+        
+        if len(columns) > 1:
+            # Многоколоночный макет
+            return self._sort_by_columns(columns)
+        else:
+            # Одна колонка — сортируем сверху вниз, слева направо внутри строк
+            return self._sort_single_column(elements)
+    
+    def _detect_columns(self, elements: List[LayoutElement]) -> List[List[LayoutElement]]:
+        """
+        Определение колонок на основе горизонтальных промежутков.
+        Колонка — группа элементов без большого горизонтального разрыва между ними.
+        """
+        if not elements:
+            return []
+        
+        # Находим "полосы" элементов по X
+        # Сначала собираем все горизонтальные диапазоны
+        x_ranges = [(e.bbox[0], e.bbox[2], e) for e in elements]
+        x_ranges.sort(key=lambda r: r[0])  # Сортируем по левому краю
+        
+        # Находим промежутки между группами элементов
+        column_breaks = []
+        
+        # Строим "покрытие" по X для каждого элемента
+        for i in range(1, len(x_ranges)):
+            prev_right = max(r[1] for r in x_ranges[:i])
+            curr_left = x_ranges[i][0]
+            
+            gap = curr_left - prev_right
+            
+            if gap > self.column_gap_threshold:
+                # Проверяем, что это действительно разные колонки
+                # (есть элементы на похожих y-координатах по обе стороны)
+                left_elems = [r[2] for r in x_ranges[:i]]
+                right_elems = [r[2] for r in x_ranges[i:]]
+                
+                if self._has_vertical_overlap(left_elems, right_elems):
+                    column_breaks.append(curr_left)
+        
+        if not column_breaks:
+            return [list(elements)]
+        
+        # Распределяем элементы по колонкам
+        column_breaks = sorted(set(column_breaks))
+        columns = [[] for _ in range(len(column_breaks) + 1)]
+        
+        for elem in elements:
+            col_idx = 0
+            for break_x in column_breaks:
+                if elem.center_x >= break_x:
+                    col_idx += 1
+                else:
+                    break
+            columns[col_idx].append(elem)
+        
+        # Убираем пустые колонки
+        return [col for col in columns if col]
+    
+    def _has_vertical_overlap(self, group1: List[LayoutElement], 
+                               group2: List[LayoutElement]) -> bool:
+        """Проверяет, есть ли вертикальное перекрытие между группами"""
+        if not group1 or not group2:
+            return False
+        
+        y1_min = min(e.bbox[1] for e in group1)
+        y1_max = max(e.bbox[3] for e in group1)
+        y2_min = min(e.bbox[1] for e in group2)
+        y2_max = max(e.bbox[3] for e in group2)
+        
+        overlap = min(y1_max, y2_max) - max(y1_min, y2_min)
+        min_height = min(y1_max - y1_min, y2_max - y2_min)
+        
+        # Перекрытие минимум 20% от меньшей группы
+        return overlap > min_height * 0.2 if min_height > 0 else False
+    
+    def _sort_by_columns(self, columns: List[List[LayoutElement]]) -> List[LayoutElement]:
+        """Сортировка по колонкам: колонки слева направо, внутри — сверху вниз"""
+        # Сортируем колонки по их центру X
+        columns.sort(key=lambda col: sum(e.center_x for e in col) / len(col) if col else 0)
+        
+        result = []
+        for column in columns:
+            sorted_column = self._sort_single_column(column)
+            result.extend(sorted_column)
+        
+        return result
+    
+    def _sort_single_column(self, elements: List[LayoutElement]) -> List[LayoutElement]:
+        """Сортировка элементов в одной колонке: строки сверху вниз, внутри строки — слева направо"""
+        if len(elements) <= 1:
+            return list(elements)
+        
+        # Группируем по строкам
+        rows = self._group_into_rows(elements)
+        
+        result = []
+        for row in rows:
+            # Внутри строки — слева направо
+            row.sort(key=lambda e: e.bbox[0])
+            result.extend(row)
+        
+        return result
+    
+    def _group_into_rows(self, elements: List[LayoutElement]) -> List[List[LayoutElement]]:
+        """Группировка элементов в строки по y-координате с допуском"""
+        if not elements:
+            return []
+        
+        # Сортируем по центру Y для более стабильной группировки
+        sorted_elems = sorted(elements, key=lambda e: e.center_y)
+        
+        rows = []
+        current_row = [sorted_elems[0]]
+        # Используем центр первого элемента как референс строки
+        row_y_center = sorted_elems[0].center_y
+        
+        for i in range(1, len(sorted_elems)):
+            elem = sorted_elems[i]
+            
+            # Элемент в той же строке, если его центр близок к центру строки
+            if abs(elem.center_y - row_y_center) <= self.row_tolerance:
+                current_row.append(elem)
+                # Обновляем центр строки как среднее
+                row_y_center = sum(e.center_y for e in current_row) / len(current_row)
+            else:
+                rows.append(current_row)
+                current_row = [elem]
+                row_y_center = elem.center_y
+        
+        if current_row:
+            rows.append(current_row)
+        
+        # Сортируем строки по их средней y-координате
+        rows.sort(key=lambda row: sum(e.center_y for e in row) / len(row))
+        
+        return rows
+    
+    def sort_groups(self, groups: List['ContentGroup']) -> List['ContentGroup']:
+        """Сортировка групп контента"""
+        if len(groups) <= 1:
+            return list(groups)
+        
+        # Преобразуем группы в "псевдо-элементы" для сортировки
+        group_data = []
+        for g in groups:
+            bbox = g.bbox
+            center_x = (bbox[0] + bbox[2]) / 2
+            center_y = (bbox[1] + bbox[3]) / 2
+            group_data.append((g, bbox, center_x, center_y))
+        
+        # Определяем колонки групп
+        columns = self._detect_group_columns(group_data)
+        
+        if len(columns) > 1:
+            result = []
+            # Сортируем колонки слева направо
+            columns.sort(key=lambda col: sum(gd[2] for gd in col) / len(col) if col else 0)
+            for col in columns:
+                # Внутри колонки — сверху вниз
+                col.sort(key=lambda gd: gd[3])
+                result.extend([gd[0] for gd in col])
+            return result
+        else:
+            # Одна колонка — сверху вниз
+            group_data.sort(key=lambda gd: (gd[3], gd[2]))
+            return [gd[0] for gd in group_data]
+    
+    def _detect_group_columns(self, group_data: List) -> List[List]:
+        """Определение колонок для групп"""
+        if len(group_data) <= 1:
+            return [group_data]
+        
+        sorted_by_x = sorted(group_data, key=lambda gd: gd[1][0])
+        
+        columns = []
+        current_col = [sorted_by_x[0]]
+        
+        for i in range(1, len(sorted_by_x)):
+            prev = sorted_by_x[i - 1]
+            curr = sorted_by_x[i]
+            
+            gap = curr[1][0] - prev[1][2]  # left - prev_right
+            
+            # Проверяем вертикальное перекрытие
+            v_overlap = min(prev[1][3], curr[1][3]) - max(prev[1][1], curr[1][1])
+            
+            if gap > self.column_gap_threshold and v_overlap > 0:
+                columns.append(current_col)
+                current_col = [curr]
+            else:
+                current_col.append(curr)
+        
+        if current_col:
+            columns.append(current_col)
+        
+        return columns
+
+def _is_content_title(self, element: LayoutElement,
+                      all_elements: List[LayoutElement],
+                      cv_blocks: List[CVBlock]) -> bool:
+    # Более строгий порог для заголовков
+    if element.formatting.importance_score < 0.18:
+        return False
+    
+    # Заголовок не должен быть слишком длинным (много строк = не заголовок)
+    if element.text.count('\n') > 2:
+        return False
+    
+    # Заголовок обычно короткий
+    if len(element.text) > 150:
+        return False
+    
+    visuals_below = [
+        e for e in all_elements
+        if e.is_visual and
+        e.bbox[1] > element.bbox[3] and
+        e.bbox[1] - element.bbox[3] < CONFIG["grouping"]["max_title_distance"]
+    ]
+    
+    for visual in visuals_below:
+        # Приоритет: тот же CV-блок
+        same_cv = (
+            element.cv_block_id is not None and
+            visual.cv_block_id is not None and
+            element.cv_block_id == visual.cv_block_id
+        )
+        
+        aligned = self._is_aligned(element, visual)
+        
+        # Требуем либо same_cv, либо хорошее выравнивание
+        if same_cv or aligned:
+            # Дополнительная проверка: заголовок должен быть "важнее" среднего
+            other_texts = [e for e in all_elements 
+                          if e.text and not e.is_visual and e != element]
+            if other_texts:
+                avg_importance = sum(e.formatting.importance_score for e in other_texts) / len(other_texts)
+                if element.formatting.importance_score <= avg_importance:
+                    continue
+            return True
+    
+    return False
+
+def _is_section_header(self, element: LayoutElement,
+                       all_elements: List[LayoutElement]) -> bool:
+    # Более строгий порог
+    if element.formatting.importance_score < CONFIG["classification"]["min_importance_for_header"] + 0.05:
+        return False
+    
+    # Заголовок секции не должен быть многострочным
+    if element.text.count('\n') > 1:
+        return False
+    
+    # Должен быть достаточно коротким
+    if len(element.text) > 100:
+        return False
+    
+    elements_below = [
+        e for e in all_elements
+        if e.bbox[1] > element.bbox[3] and
+        not e.is_visual and
+        e.role not in (ElementRole.FOOTNOTE, ElementRole.LEGEND) and
+        self._is_aligned(element, e) and
+        e.bbox[1] - element.bbox[3] < 120  # Не слишком далеко
+    ]
+    
+    if not elements_below:
+        return False
+    
+    # Должно быть минимум 2 элемента ниже для секции
+    if len(elements_below) < 1:
+        return False
+    
+    avg_importance = sum(e.formatting.importance_score for e in elements_below) / len(elements_below)
+    
+    # Заголовок секции должен быть заметно "важнее"
+    return element.formatting.importance_score > avg_importance + 0.10
+
+
+def __init__(self, slide, image_path: str, prs, slide_index: int):
+    self.slide = slide
+    self.slide_index = slide_index
+    
+    sw = prs.slide_width if prs.slide_width > 0 else 9144000
+    sh = prs.slide_height if prs.slide_height > 0 else 6858000
+    
+    self.cv_detector = CVBlockDetector(image_path)
+    self.scale_x = self.cv_detector.w / sw
+    self.scale_y = self.cv_detector.h / sh
+    self.slide_width = self.cv_detector.w
+    self.slide_height = self.cv_detector.h
+    self.slide_area = self.slide_width * self.slide_height
+    
+    self.classifier = RoleClassifier(self.slide_width, self.slide_height)
+    self.optimizer = ParameterOptimizer(self.cv_detector, self.slide_area)
+    self.block_merger = BlockMerger(self.slide_width, self.slide_height)
+    self.sorter = ElementSorter(self.slide_width, self.slide_height)  # ДОБАВИТЬ ЭТУ СТРОКУ
+
+def __init__(self, slide, image_path: str, prs, slide_index: int):
+    self.slide = slide
+    self.slide_index = slide_index
+    
+    sw = prs.slide_width if prs.slide_width > 0 else 9144000
+    sh = prs.slide_height if prs.slide_height > 0 else 6858000
+    
+    self.cv_detector = CVBlockDetector(image_path)
+    self.scale_x = self.cv_detector.w / sw
+    self.scale_y = self.cv_detector.h / sh
+    self.slide_width = self.cv_detector.w
+    self.slide_height = self.cv_detector.h
+    self.slide_area = self.slide_width * self.slide_height
+    
+    self.classifier = RoleClassifier(self.slide_width, self.slide_height)
+    self.optimizer = ParameterOptimizer(self.cv_detector, self.slide_area)
+    self.block_merger = BlockMerger(self.slide_width, self.slide_height)
+    self.sorter = ElementSorter(self.slide_width, self.slide_height)  # ДОБАВИТЬ ЭТУ СТРОКУ
+
+
+@staticmethod
+def convert(groups: List[ContentGroup]) -> List[Dict]:
+    result = []
+    
+    for group in groups:
+        data = {
+            "type": group.group_type,
+            "header": group.header.text if group.header else None,
+            "combined_text": "",
+            "text_elements": [],
+            "charts_data": [],
+            "tables_data": []
+        }
+        
+        text_parts = []
+        
+        # Элементы уже отсортированы в _refine_groups, используем их порядок
+        for elem in group.elements:
+            if elem == group.header:
+                continue
+            
+            if elem.role == ElementRole.CHART:
+                data["charts_data"].append(OutputConverter._extract_chart(elem.shape))
+            elif elem.role == ElementRole.TABLE:
+                data["tables_data"].append(OutputConverter._extract_table(elem.shape))
+            elif elem.text:
+                text_parts.append({
+                    "text": elem.text,
+                    "role": elem.role.value
+                })
+        
+        data["text_elements"] = text_parts
+        data["combined_text"] = "\n".join(t["text"] for t in text_parts)
+        
+        result.append(data)
+    
+    return result
+
+def get_linear_content(slide) -> List[Dict]:
+    """Fallback: линейное извлечение контента с улучшенной сортировкой"""
+    
+    def extract_from_shapes(shapes):
+        results = {"text": [], "charts": [], "tables": []}
+        
+        for shape in shapes:
+            if isinstance(shape, GroupShape):
+                sub = extract_from_shapes(shape.shapes)
+                results["text"].extend(sub["text"])
+                results["charts"].extend(sub["charts"])
+                results["tables"].extend(sub["tables"])
+                continue
+            
+            try:
+                if hasattr(shape, 'has_chart') and shape.has_chart:
+                    results["charts"].append(OutputConverter._extract_chart(shape))
+                elif hasattr(shape, 'has_table') and shape.has_table:
+                    results["tables"].append(OutputConverter._extract_table(shape))
+                elif hasattr(shape, 'text') and shape.text.strip():
+                    # Сохраняем позицию для сортировки
+                    results["text"].append({
+                        "text": shape.text.strip(),
+                        "top": shape.top,
+                        "left": shape.left,
+                        "center_y": shape.top + shape.height / 2
+                    })
+            except:
+                pass
+        
+        return results
+    
+    content = extract_from_shapes(slide.shapes)
+    
+    # Улучшенная сортировка текста
+    if content["text"]:
+        # Определяем допуск для "одной строки"
+        if len(content["text"]) > 1:
+            heights = [t.get("center_y", t["top"]) for t in content["text"]]
+            avg_height = sum(heights) / len(heights)
+            row_tolerance = avg_height * 0.03  # 3% от средней высоты
+        else:
+            row_tolerance = 20
+        
+        # Группируем по строкам
+        sorted_texts = sorted(content["text"], key=lambda t: t.get("center_y", t["top"]))
+        rows = []
+        current_row = [sorted_texts[0]]
+        current_y = sorted_texts[0].get("center_y", sorted_texts[0]["top"])
+        
+        for t in sorted_texts[1:]:
+            t_y = t.get("center_y", t["top"])
+            if abs(t_y - current_y) <= row_tolerance:
+                current_row.append(t)
+            else:
+                rows.append(current_row)
+                current_row = [t]
+                current_y = t_y
+        rows.append(current_row)
+        
+        # Сортируем внутри строк слева направо
+        final_texts = []
+        for row in rows:
+            row.sort(key=lambda t: t["left"])
+            final_texts.extend([t["text"] for t in row])
+        
+        combined_text = "\n".join(final_texts)
+    else:
+        combined_text = ""
+    
+    return [{
+        "type": "linear_fallback",
+        "combined_text": combined_text,
+        "charts_data": content["charts"],
+        "tables_data": content["tables"]
+    }]
