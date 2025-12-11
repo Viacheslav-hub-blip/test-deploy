@@ -212,6 +212,7 @@ class LayoutElement:
     cv_block_id: Optional[int] = None
     column_id: Optional[int] = None
     reading_order: int = 0
+    container_id: Optional[int] = None 
     
     @property
     def center_x(self) -> float:
@@ -1235,41 +1236,44 @@ class HybridGrouper:
         return (x, y, x + w, y + h)
     
     def process(self) -> Tuple[List[ContentGroup], QualityMetrics, CVParams]:
-        """Полный цикл обработки слайда"""
-        
-        # 1. Извлечение элементов
-        elements = self._extract_elements()
-        
-        if not elements:
-            return [], QualityMetrics(), CVParams()
-        
-        # 2. Оптимизация CV-параметров
-        best_params, cv_blocks, initial_metrics = self.optimizer.optimize(
-            elements, self.slide_index
-        )
-        
-        # 3. Объединение логически связанных блоков
-        cv_blocks = self.block_merger.merge_related_blocks(cv_blocks, elements)
-        
-        # Переназначаем элементы после объединения
-        self._reassign_elements_to_blocks(elements, cv_blocks, best_params.min_intersection_score)
-        
-        # 4. Классификация ролей
-        self.classifier.classify_all(elements, cv_blocks)
-        
-        # 5. Группировка
-        groups, orphans = self._build_groups(elements, cv_blocks)
-        
-        # 6. Постобработка
-        groups = self._refine_groups(groups, orphans, elements)
-        
-        # 7. Финальные метрики
-        final_metrics = QualityAssessor.assess(
-            groups, orphans, len(elements),
-            len(cv_blocks), self.slide_area
-        )
-        
-        return groups, final_metrics, best_params
+    """Полный цикл обработки слайда"""
+    
+    # 1. Извлечение элементов
+    elements = self._extract_elements()
+    
+    if not elements:
+        return [], QualityMetrics(), CVParams()
+    
+    # 2. НОВОЕ: Определение контейнерных отношений
+    container_groups = self._detect_container_relationships(elements)
+    
+    # 3. Оптимизация CV-параметров
+    best_params, cv_blocks, initial_metrics = self.optimizer.optimize(
+        elements, self.slide_index
+    )
+    
+    # 4. Объединение логически связанных блоков
+    cv_blocks = self.block_merger.merge_related_blocks(cv_blocks, elements)
+    
+    # Переназначаем элементы после объединения
+    self._reassign_elements_to_blocks(elements, cv_blocks, best_params.min_intersection_score)
+    
+    # 5. Классификация ролей
+    self.classifier.classify_all(elements, cv_blocks)
+    
+    # 6. Группировка (передаём информацию о контейнерах)
+    groups, orphans = self._build_groups(elements, cv_blocks, container_groups)
+    
+    # 7. Постобработка
+    groups = self._refine_groups(groups, orphans, elements)
+    
+    # 8. Финальные метрики
+    final_metrics = QualityAssessor.assess(
+        groups, orphans, len(elements),
+        len(cv_blocks), self.slide_area
+    )
+    
+    return groups, final_metrics, best_params
     
     def _extract_elements(self) -> List[LayoutElement]:
         """Извлечение элементов"""
@@ -1314,6 +1318,103 @@ class HybridGrouper:
             process_shape(shape)
         
         return elements
+
+    def _detect_container_relationships(self, elements: List[LayoutElement]) -> Dict[int, List[LayoutElement]]:
+    """
+    Определяет вложенность элементов: если одни элементы находятся 
+    внутри других по координатам, они считаются логически связанными.
+    
+    Возвращает словарь: container_element_id -> [вложенные элементы]
+    """
+    containers = {}  # id(container_elem) -> [contained_elements]
+    
+    # Параметры для определения вложенности
+    MIN_CONTAINMENT_RATIO = 0.75  # Минимум 75% площади должно быть внутри
+    MIN_CONTAINER_AREA_RATIO = 1.5  # Контейнер должен быть минимум в 1.5 раза больше
+    
+    for potential_container in elements:
+        contained_elements = []
+        container_bbox = potential_container.bbox
+        container_area = potential_container.area
+        
+        # Пропускаем слишком маленькие элементы как потенциальные контейнеры
+        if container_area < self.slide_area * 0.01:
+            continue
+        
+        for potential_child in elements:
+            # Элемент не может быть контейнером самому себе
+            if id(potential_child) == id(potential_container):
+                continue
+            
+            child_bbox = potential_child.bbox
+            child_area = potential_child.area
+            
+            # Контейнер должен быть значительно больше
+            if container_area < child_area * MIN_CONTAINER_AREA_RATIO:
+                continue
+            
+            # Проверяем, находится ли child внутри container
+            # Вычисляем пересечение
+            inter_x1 = max(container_bbox[0], child_bbox[0])
+            inter_y1 = max(container_bbox[1], child_bbox[1])
+            inter_x2 = min(container_bbox[2], child_bbox[2])
+            inter_y2 = min(container_bbox[3], child_bbox[3])
+            
+            if inter_x2 <= inter_x1 or inter_y2 <= inter_y1:
+                continue  # Нет пересечения
+            
+            intersection_area = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
+            
+            # Какая доля child находится внутри container
+            containment_ratio = intersection_area / child_area if child_area > 0 else 0
+            
+            if containment_ratio >= MIN_CONTAINMENT_RATIO:
+                contained_elements.append(potential_child)
+        
+        if contained_elements:
+            containers[id(potential_container)] = {
+                'container': potential_container,
+                'children': contained_elements
+            }
+    
+    # Разрешаем конфликты: если элемент вложен в несколько контейнеров,
+    # выбираем наименьший (наиболее специфичный)
+    element_to_container = {}  # id(element) -> id(best_container)
+    
+    for container_id, data in containers.items():
+        container = data['container']
+        for child in data['children']:
+            child_id = id(child)
+            
+            if child_id not in element_to_container:
+                element_to_container[child_id] = container_id
+            else:
+                # Сравниваем с текущим контейнером - выбираем меньший
+                current_container_id = element_to_container[child_id]
+                current_container = containers[current_container_id]['container']
+                
+                if container.area < current_container.area:
+                    element_to_container[child_id] = container_id
+    
+    # Назначаем container_id элементам
+    for element in elements:
+        elem_id = id(element)
+        if elem_id in element_to_container:
+            element.container_id = element_to_container[elem_id]
+    
+    # Формируем финальный результат
+    final_containers = {}
+    for container_id, data in containers.items():
+        valid_children = [
+            child for child in data['children'] 
+            if child.container_id == container_id
+        ]
+        if valid_children:
+            final_containers[container_id] = valid_children
+            # Также помечаем сам контейнер
+            data['container'].container_id = container_id
+    
+    return final_containers
     
     def _reassign_elements_to_blocks(self, elements: List[LayoutElement],
                                       blocks: List[CVBlock],
@@ -1351,52 +1452,84 @@ class HybridGrouper:
         areaA = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
         return inter / areaA if areaA > 0 else 0
     
-    def _build_groups(self, elements: List[LayoutElement],
-                      cv_blocks: List[CVBlock]) -> Tuple[List[ContentGroup], List[LayoutElement]]:
-        """Построение групп"""
-        groups = []
-        used = set()
-        
-        # Приоритет 1: Нативные группы PowerPoint
-        native_groups = defaultdict(list)
+   def _build_groups(self, elements: List[LayoutElement],
+                  cv_blocks: List[CVBlock],
+                  container_groups: Dict[int, List[LayoutElement]] = None) -> Tuple[List[ContentGroup], List[LayoutElement]]:
+    """Построение групп"""
+    groups = []
+    used = set()
+    
+    if container_groups is None:
+        container_groups = {}
+    
+    # НОВЫЙ Приоритет 0: Контейнерные группы (элементы внутри рамок)
+    for container_id, contained_elements in container_groups.items():
+        # Находим сам контейнер
+        container_elem = None
         for elem in elements:
-            if elem.native_group_id is not None:
-                native_groups[elem.native_group_id].append(elem)
+            if id(elem) == container_id:
+                container_elem = elem
+                break
         
-        for group_id, group_elems in native_groups.items():
+        # Собираем все элементы группы (контейнер + вложенные)
+        group_elems = []
+        if container_elem and id(container_elem) not in used:
+            # Проверяем, есть ли у контейнера собственный текст
+            # Если контейнер пустой (просто рамка), не добавляем его
+            if container_elem.text.strip():
+                group_elems.append(container_elem)
+                used.add(id(container_elem))
+        
+        for child in contained_elements:
+            if id(child) not in used:
+                group_elems.append(child)
+                used.add(id(child))
+        
+        if group_elems:
             group = self._create_group(group_elems)
-            group.native_group_id = group_id
+            group.group_type = "container_block"
             groups.append(group)
-            used.update(id(e) for e in group_elems)
+    
+    # Приоритет 1: Нативные группы PowerPoint
+    native_groups = defaultdict(list)
+    for elem in elements:
+        if elem.native_group_id is not None and id(elem) not in used:
+            native_groups[elem.native_group_id].append(elem)
+    
+    for group_id, group_elems in native_groups.items():
+        group = self._create_group(group_elems)
+        group.native_group_id = group_id
+        groups.append(group)
+        used.update(id(e) for e in group_elems)
+    
+    # Приоритет 2: CV-блоки
+    for cv_block in cv_blocks:
+        block_elems = [e for e in cv_block.elements if id(e) not in used]
+        if not block_elems:
+            continue
         
-        # Приоритет 2: CV-блоки
-        for cv_block in cv_blocks:
-            block_elems = [e for e in cv_block.elements if id(e) not in used]
-            if not block_elems:
-                continue
-            
-            # Разделяем блок если в нём несколько графиков
-            subgroups = self._split_cv_block(block_elems)
-            
-            for sg_elems in subgroups:
-                group = self._create_group(sg_elems)
-                group.cv_block_ids = [cv_block.block_id]
-                groups.append(group)
-                used.update(id(e) for e in sg_elems)
+        # Разделяем блок если в нём несколько графиков
+        subgroups = self._split_cv_block(block_elems)
         
-        # Приоритет 3: Связывание orphans
-        orphans = [e for e in elements if id(e) not in used]
-        
-        # Связываем заголовки секций с подпунктами
-        section_groups = self._group_sections(orphans, used)
-        groups.extend(section_groups)
-        
-        # Связываем одинокие заголовки с графиками
-        self._link_orphan_titles(groups, orphans, used)
-        
-        final_orphans = [e for e in orphans if id(e) not in used]
-        
-        return groups, final_orphans
+        for sg_elems in subgroups:
+            group = self._create_group(sg_elems)
+            group.cv_block_ids = [cv_block.block_id]
+            groups.append(group)
+            used.update(id(e) for e in sg_elems)
+    
+    # Приоритет 3: Связывание orphans
+    orphans = [e for e in elements if id(e) not in used]
+    
+    # Связываем заголовки секций с подпунктами
+    section_groups = self._group_sections(orphans, used)
+    groups.extend(section_groups)
+    
+    # Связываем одинокие заголовки с графиками
+    self._link_orphan_titles(groups, orphans, used)
+    
+    final_orphans = [e for e in orphans if id(e) not in used]
+    
+    return groups, final_orphans
     
     def _split_cv_block(self, elements: List[LayoutElement]) -> List[List[LayoutElement]]:
         """Разделение CV-блока на подгруппы если в нём несколько графиков"""
@@ -1600,27 +1733,29 @@ class HybridGrouper:
                 group.header = best_title
                 used.add(id(best_title))
     
-    def _create_group(self, elements: List[LayoutElement]) -> ContentGroup:
-        """Создание группы"""
-        group = ContentGroup(elements=elements)
-        
-        visuals = [e for e in elements if e.is_visual]
-        headers = [e for e in elements if e.is_header_like]
-        
-        if visuals:
-            group.visual_content = visuals[0]
-            group.group_type = "chart_block" if visuals[0].role == ElementRole.CHART else "table_block"
-        elif headers and len(elements) > 1:
-            group.group_type = "section_block"
-        elif headers:
-            group.group_type = "header_only"
-        else:
-            group.group_type = "text_block"
-        
-        if headers:
-            group.header = min(headers, key=lambda h: h.bbox[1])
-        
-        return group
+   def _create_group(self, elements: List[LayoutElement]) -> ContentGroup:
+    """Создание группы"""
+    group = ContentGroup(elements=elements)
+    
+    visuals = [e for e in elements if e.is_visual]
+    headers = [e for e in elements if e.is_header_like]
+    
+    if visuals:
+        group.visual_content = visuals[0]
+        group.group_type = "chart_block" if visuals[0].role == ElementRole.CHART else "table_block"
+    elif headers and len(elements) > 1:
+        group.group_type = "section_block"
+    elif headers:
+        group.group_type = "header_only"
+    elif any(e.container_id is not None for e in elements):
+        group.group_type = "container_block"
+    else:
+        group.group_type = "text_block"
+    
+    if headers:
+        group.header = min(headers, key=lambda h: h.bbox[1])
+    
+    return group
     
     def _refine_groups(self, groups: List[ContentGroup],
                        orphans: List[LayoutElement],
