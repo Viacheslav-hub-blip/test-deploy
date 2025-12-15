@@ -1,0 +1,35 @@
+import os
+import re
+from datetime import datetime, timedelta
+
+FOLDER_PATH = "my_folder"  # Имя твоей папки
+YEAR = 2024                # Год для расчета дат
+
+def get_week_dates(year, week):
+    # Получаем дату понедельника указанной недели
+    start_date = datetime.strptime(f'{year}-W{week}-1', "%G-W%V-%u")
+    # Генерируем список из 7 дней
+    dates = [(start_date + timedelta(days=i)).strftime('%d.%m.%Y') for i in range(7)]
+    return ", ".join(dates)
+
+for filename in os.listdir(FOLDER_PATH):
+    file_path = os.path.join(FOLDER_PATH, filename)
+    
+    # Читаем файл
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Ищем число 30-49 в тексте
+    match = re.search(r'\b(3[0-9]|4[0-9])\b', content)
+    
+    if match:
+        week_num = match.group(1)
+        dates_str = get_week_dates(YEAR, week_num)
+        
+        header = f"Отчет за {week_num}, содержит информацию за даты {dates_str}\n\n"
+        
+        # Перезаписываем файл с заголовком
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(header + content)
+        
+        print(f"Обработан файл: {filename} (Неделя {week_num})")
