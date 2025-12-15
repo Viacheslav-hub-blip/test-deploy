@@ -2,34 +2,46 @@ import os
 import re
 from datetime import datetime, timedelta
 
-FOLDER_PATH = "my_folder"  # Имя твоей папки
-YEAR = 2024                # Год для расчета дат
+FOLDER_1 = "folder_main"    # Папка 1 (где добавляем заголовок)
+FOLDER_2 = "folder_other"   # Папка 2 (с чем сопоставляем)
+YEAR = 2024
 
-def get_week_dates(year, week):
-    # Получаем дату понедельника указанной недели
+def get_header_str(year, week):
+    # Генерация строки с датами
     start_date = datetime.strptime(f'{year}-W{week}-1', "%G-W%V-%u")
-    # Генерируем список из 7 дней
     dates = [(start_date + timedelta(days=i)).strftime('%d.%m.%Y') for i in range(7)]
-    return ", ".join(dates)
+    return f"Отчет за {week}, содержит информацию за даты {', '.join(dates)}\n\n"
 
-for filename in os.listdir(FOLDER_PATH):
-    file_path = os.path.join(FOLDER_PATH, filename)
-    
-    # Читаем файл
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    # Ищем число 30-49 в тексте
-    match = re.search(r'\b(3[0-9]|4[0-9])\b', content)
-    
+# 1. Читаем вторую папку в словарь: { '35': 'текст файла...' }
+docs_map = {}
+for filename in os.listdir(FOLDER_2):
+    match = re.search(r'(3[0-9]|4[0-9])', filename)
     if match:
+        with open(os.path.join(FOLDER_2, filename), 'r', encoding='utf-8') as f:
+            docs_map[match.group(1)] = f.read()
+
+# 2. Собираем итоговый список
+result_data = []
+
+for filename in os.listdir(FOLDER_1):
+    match = re.search(r'(3[0-9]|4[0-9])', filename)
+    
+    # Если нашли цифру и для нее есть пара во второй папке
+    if match and match.group(1) in docs_map:
         week_num = match.group(1)
-        dates_str = get_week_dates(YEAR, week_num)
         
-        header = f"Отчет за {week_num}, содержит информацию за даты {dates_str}\n\n"
+        # Читаем файл из первой папки
+        with open(os.path.join(FOLDER_1, filename), 'r', encoding='utf-8') as f:
+            content_1 = f.read()
+            
+        # Формируем первый элемент (Заголовок + Текст)
+        text_with_header = get_header_str(YEAR, week_num) + content_1
         
-        # Перезаписываем файл с заголовком
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(header + content)
+        # Достаем второй элемент (Текст из второй папки)
+        content_2 = docs_map[week_num]
         
-        print(f"Обработан файл: {filename} (Неделя {week_num})")
+        # Добавляем tuple в список
+        result_data.append((text_with_header, content_2))
+
+# result_data теперь содержит список tuples
+print(f"Сформировано пар: {len(result_data)}")
