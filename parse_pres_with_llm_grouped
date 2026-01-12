@@ -1,0 +1,384 @@
+import json
+import re
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
+
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+
+# ==========================================
+# 1. МОДЕЛИ ДАННЫХ
+# ==========================================
+
+@dataclass
+class SlideElement:
+    id: int
+    type: str
+    content: Any
+    # Координаты в EMU (внутренние единицы PPTX)
+    top: int
+    left: int
+    width: int
+    height: int
+    # Иерархия
+    group_id: Optional[int] = None
+    parent_id: Optional[int] = None
+    # Флаг, что элемент обработан (например, слит с графиком)
+    is_merged: bool = False
+
+    @property
+    def bottom(self): return self.top + self.height
+
+    @property
+    def right(self): return self.left + self.width
+
+
+# ==========================================
+# 2. ПАРСЕР ПРЕЗЕНТАЦИИ (Extraction Engine)
+# ==========================================
+
+class PresentationParser:
+    def __init__(self, pptx_path: str):
+        self.prs = Presentation(pptx_path)
+
+    def extract_slide_elements(self, slide_index: int) -> List[SlideElement]:
+        slide = self.prs.slides[slide_index]
+
+        # 1. Рекурсивное извлечение всех шейпов
+        elements = self._extract_recursive(slide.shapes)
+
+        # 2. Привязка "висящих" подписей к графикам
+        self._link_captions_to_charts(elements, self.prs.slide_height)
+
+        # 3. Определение вложенности (текст внутри контейнера)
+        self._detect_containment(elements)
+
+        # 4. Возвращаем только активные (не merged) элементы
+        # Сортируем: Сверху-вниз, затем Слева-направо (естественный порядок чтения)
+        active_elements = [el for el in elements if not el.is_merged]
+        active_elements.sort(key=lambda x: (x.top, x.left))
+
+        return active_elements
+
+    def _extract_recursive(self, shapes, group_id=None) -> List[SlideElement]:
+        results = []
+        for shape in shapes:
+            if not getattr(shape, 'visible', True):
+                continue
+
+            # Если группа - ныряем внутрь
+            if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+                # Сохраняем ID верхней группы
+                gid = group_id if group_id else shape.shape_id
+                results.extend(self._extract_recursive(shape.shapes, group_id=gid))
+                continue
+
+            content = None
+            el_type = "UNKNOWN"
+
+            if shape.has_chart:
+                el_type = "CHART"
+                content = self._extract_chart_data(shape.chart)
+            elif shape.has_table:
+                el_type = "TABLE"
+                content = self._extract_table_data(shape.table)
+            elif shape.has_text_frame:
+                txt = self._clean_text(shape.text_frame)
+                if txt:
+                    el_type = "TEXT"
+                    content = txt
+            elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                el_type = "IMAGE"
+                content = "[IMAGE]"
+            elif shape.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE:
+                el_type = "SHAPE"
+                content = "container"
+
+            if content:
+                results.append(SlideElement(
+                    id=shape.shape_id,
+                    type=el_type,
+                    content=content,
+                    top=shape.top, left=shape.left, width=shape.width, height=shape.height,
+                    group_id=group_id
+                ))
+        return results
+
+    def _link_captions_to_charts(self, elements: List[SlideElement], slide_height: int):
+        """Находит текст под графиком (легенда, источник) и включает его в график."""
+        charts = [e for e in elements if e.type == 'CHART']
+        texts = [e for e in elements if e.type == 'TEXT']
+        margin = slide_height * 0.15
+
+        for chart in charts:
+            for txt in texts:
+                if txt.is_merged: continue
+                # Если текст ниже графика (в пределах margin)
+                if txt.top >= chart.bottom and (txt.top - chart.bottom) <= margin:
+                    # И перекрывается по X
+                    overlap = max(0, min(chart.right, txt.right) - max(chart.left, txt.left))
+                    if overlap > 0:
+                        if isinstance(chart.content, dict):
+                            if "captions" not in chart.content: chart.content["captions"] = []
+                            chart.content["captions"].append(txt.content)
+                        txt.is_merged = True
+
+    def _detect_containment(self, elements: List[SlideElement]):
+        """Определяет, находится ли элемент визуально внутри другого."""
+        # Сортируем по площади (от больших к малым)
+        sorted_els = sorted(elements, key=lambda x: x.width * x.height, reverse=True)
+
+        for child in sorted_els:
+            if child.is_merged: continue
+            for parent in sorted_els:
+                if child.id == parent.id: continue
+                if parent.type not in ['SHAPE', 'TABLE']: continue
+
+                # Полное вхождение
+                if (child.left >= parent.left and child.right <= parent.right and
+                        child.top >= parent.top and child.bottom <= parent.bottom):
+                    child.parent_id = parent.id
+                    break
+
+    # --- HELPERS ---
+    def _clean_text(self, text_frame) -> str:
+        if not text_frame: return ""
+        return " ".join([p.text.strip() for p in text_frame.paragraphs if p.text.strip()])
+
+    def _format_date(self, value):
+        """Конвертация Excel serial date или строки в YYYY-MM-DD."""
+        try:
+            # Excel serial dates ~ 40000+
+            val_float = float(value)
+            if 20000 < val_float < 80000:
+                dt = datetime(1899, 12, 30) + timedelta(days=val_float)
+                return dt.strftime("%Y-%m-%d")
+        except:
+            pass
+        return str(value)
+
+    def _extract_chart_data(self, chart) -> Dict:
+        data = {"title": "", "series": []}
+        try:
+            if chart.has_title:
+                data["title"] = chart.chart_title.text_frame.text.strip()
+
+            categories = []
+            try:
+                # Попытка достать категории оси X
+                if len(chart.plots) > 0:
+                    raw = chart.plots[0].categories
+                    categories = [self._format_date(c) for c in raw]
+            except:
+                pass
+
+            for ser in chart.series:
+                vals = [v for v in ser.values]
+                cats = categories
+                # У Scatter могут быть свои X-значения
+                if hasattr(ser, 'x_values') and ser.x_values:
+                    try:
+                        cats = [self._format_date(x) for x in ser.x_values]
+                    except:
+                        pass
+
+                data["series"].append({
+                    "name": ser.name,
+                    "categories": cats,
+                    "values": vals
+                })
+        except Exception as e:
+            data["error"] = str(e)
+        return data
+
+    def _extract_table_data(self, table):
+        return [[self._clean_text(c.text_frame) for c in r.cells] for r in table.rows]
+
+
+# ==========================================
+# 3. LLM SPATIAL PROCESSOR
+# ==========================================
+
+class SpatialLLMProcessor:
+    def __init__(self, llm_client):
+        self.llm = llm_client
+
+    def process_slide(self, elements: List[SlideElement], slide_width: int, slide_height: int) -> Dict:
+        if not elements: return {}
+        prompt = self._create_spatial_prompt(elements, slide_width, slide_height)
+        return self._call_llm(prompt)
+
+    def _create_spatial_prompt(self, elements: List[SlideElement], sw: int, sh: int) -> str:
+        """
+        Создает текстовое представление слайда с нормализованными координатами (0-1000).
+        """
+        items_str = []
+        for el in elements:
+            # Нормализация (Mapping to 1000x1000 canvas)
+            x = int((el.left / sw) * 1000)
+            y = int((el.top / sh) * 1000)
+            w = int((el.width / sw) * 1000)
+            h = int((el.height / sh) * 1000)
+
+            # Теги
+            tags = [el.type]
+            if el.group_id: tags.append(f"GRP:{el.group_id}")
+            if el.parent_id: tags.append(f"IN:{el.parent_id}")
+
+            # Контент
+            c_str = str(el.content).replace('\n', ' ').strip()
+
+            # Формируем строку: BBOX:[x,y,w,h] | TAGS | CONTENT
+            # bbox позволяет LLM понять:
+            # 1. Если X совпадают -> это колонка (Vertical Stack)
+            # 2. Если Y совпадают -> это строка (Table Row)
+            items_str.append(f"bbox:[{x},{y},{w},{h}] | Types:{','.join(tags)} | Content:\"{c_str}\"")
+
+        context = "\n".join(items_str)
+
+        return f"""
+You are a Spatial Data Extraction AI. I will provide a list of slide elements with their bounding boxes on a 1000x1000 grid.
+Format: `bbox:[x, y, width, height]` where (0,0) is top-left.
+
+**INPUT DATA:**
+---------------------
+{context}
+---------------------
+
+**TASK:**
+Reconstruct the logical data objects from the slide. Group fragmented elements into meaningful entities.
+
+**SPATIAL REASONING RULES:**
+1. **Vertical Alignment (Columns):** If Element A is at `x:100` and Element B is at `x:100` (but lower `y`), they likely belong to the same object (e.g., Title -> Description -> Value).
+2. **Horizontal Alignment (Tables):** If Element A and Element B share the same `y`, they are likely attributes of a table row.
+3. **Groups:** Items with the same 'GRP' tag MUST be grouped together.
+
+**OUTPUT JSON SCHEMA:**
+{{
+  "slide_title": "Inferred Title",
+  "structured_data": [
+    {{
+      "type": "infographic_card" | "table_row" | "chart_analysis",
+      "entity": {{
+        // Extract semantic keys, e.g., "product": "Venus", "value": "90%", "desc": "..."
+        // MERGE data from vertically or horizontally aligned elements here.
+      }}
+    }}
+  ]
+}}
+
+Output ONLY valid JSON.
+"""
+
+    def _call_llm(self, prompt: str) -> Dict:
+        response = None
+        try:
+            # 1. Вызов LLM
+            response = self.llm.invoke(prompt)
+
+            # 2. Извлечение текста (совместимость с LangChain и строками)
+            content_text = ""
+            if hasattr(response, 'content'):
+                content_text = response.content  # LangChain AIMessage
+            else:
+                content_text = str(response)  # String
+
+            # 3. Очистка Markdown (```json ... ```)
+            clean_json = re.sub(r"```(?:json)?\s*(.*)\s*```", r"\1", content_text, flags=re.DOTALL).strip()
+
+            # 4. Поиск границ JSON (на случай "Here is your json: { ... }")
+            start_idx = clean_json.find('{')
+            end_idx = clean_json.rfind('}') + 1
+            if start_idx != -1:
+                clean_json = clean_json[start_idx:end_idx]
+
+            return json.loads(clean_json)
+
+        except Exception as e:
+            # Безопасный возврат ошибки, чтобы скрипт не падал
+            raw_preview = str(response)[:200] if response else "No response"
+            return {"error": str(e), "raw_fragment": raw_preview}
+
+
+# ==========================================
+# 4. ЗАПУСК (MOCK & REAL)
+# ==========================================
+
+class MockLLM:
+    """Эмуляция ответа от OpenAI/Anthropic"""
+
+    def invoke(self, prompt):
+        print("\n--- [LLM PROMPT GENERATED] ---")
+        # Вывод части промпта для отладки
+        lines = prompt.split('\n')
+        input_start = lines.index('**INPUT DATA:**')
+        print('\n'.join(lines[input_start:input_start + 10]))
+        print("... (rest of elements) ...")
+        print("------------------------------\n")
+
+        return """
+        ```json
+        {
+          "slide_title": "Planet Statistics",
+          "structured_data": [
+            {
+              "type": "infographic_card",
+              "entity": { "name": "Venus", "value": "90%", "desc": "Second planet from Sun" }
+            },
+            {
+              "type": "infographic_card",
+              "entity": { "name": "Mars", "value": "70%", "desc": "The Red Planet" }
+            }
+          ]
+        }
+        ```
+        """
+
+
+if __name__ == "__main__":
+    # Укажи путь к файлу
+    pptx_path = "Data Charts Infographics by Slidesgo.pptx"
+
+    try:
+        # 1. Setup
+        parser = PresentationParser(pptx_path)
+
+        # 2. Подключение LLM
+        # from langchain_openai import ChatOpenAI
+        # llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        from llm import llm
+
+        processor = SpatialLLMProcessor(llm)
+
+        final_result = []
+
+        # 3. Processing
+        for i in range(len(parser.prs.slides)):
+            print(f"Processing Slide {i + 1}...")
+
+            # Извлекаем элементы
+            elements = parser.extract_slide_elements(i)
+
+            # Отправляем в LLM с размерами слайда
+            slide_data = processor.process_slide(
+                elements,
+                parser.prs.slide_width,
+                parser.prs.slide_height
+            )
+
+            final_result.append({
+                "slide_number": i + 1,
+                "extraction": slide_data
+            })
+
+        # 4. Output
+        print(json.dumps(final_result, indent=2, ensure_ascii=False))
+
+    except FileNotFoundError:
+        print(f"Error: File '{pptx_path}' not found.")
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
