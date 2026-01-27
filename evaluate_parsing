@@ -1,110 +1,67 @@
-import re
-import spacy
-from difflib import SequenceMatcher
+Ты — строгий и педантичный QA-инженер (Аудитор Данных).
+Твоя задача — проверить качество автоматического парсинга слайда презентации.
+Ты должен сравнить ИСХОДНЫЙ ТЕКСТ (Original) и РЕЗУЛЬТАТ ПАРСИНГА (Parsed) и вынести вердикт в формате JSON.
 
-# Загружаем модель для NER (Named Entity Recognition)
-# python -m spacy download ru_core_news_md
-try:
-    nlp = spacy.load("ru_core_news_md")
-except:
-    print("Не забудь скачать модель: python -m spacy download ru_core_news_md")
+### ИНСТРУКЦИЯ ПО СРАВНЕНИЮ
 
-class PresentationEvaluator:
-    def __init__(self, use_embeddings=False):
-        self.use_embeddings = use_embeddings
-        # Если нужна глубокая семантика, можно подключить sentence-transformers
-        # self.embedder = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+1.  **ЧИСЛА И ДАТЫ (Критично):**
+    *   Любое число (деньги, проценты, штуки, годы) должно быть сохранено.
+    *   Если в Original: "100 руб.", а в Parsed: "1000 руб." — это КРИТИЧЕСКАЯ ОШИБКА.
+    *   Форматирование НЕ считается ошибкой: "1 млн" == "1 000 000" == "1.000.000". Это ОК.
+    *   "5%" == "пять процентов". Это ОК.
 
-    def _extract_numbers(self, text):
-        """Извлекает числа, даты, проценты."""
-        # Простая регулярка для чисел, включая дробные и с запятыми
-        return set(re.findall(r'-?\d+[.,]?\d*', text))
+2.  **СУЩНОСТИ (Важно):**
+    *   Имена людей, названия компаний, гео-локации должны быть сохранены.
+    *   Если в Original: "Иван Петров", а в Parsed: "Петров" — это допустимо (Warning), но не критично.
+    *   Если в Original: "Иван Петров", а в Parsed: "Сидор Иванов" — это КРИТИЧЕСКАЯ ОШИБКА (Hallucination).
 
-    def _extract_entities(self, text):
-        """Извлекает именованные сущности (ORG, PER, LOC)."""
-        doc = nlp(text)
-        # Приводим к нижнему регистру для сравнения
-        return set([ent.text.lower() for ent in doc.ents])
+3.  **ГАЛЛЮЦИНАЦИИ (Недопустимо):**
+    *   Если в Parsed появилась информация, факты или цифры, которых НЕТ в Original — это ошибка. Модель не должна ничего додумывать.
 
-    def _calculate_f1(self, true_set, pred_set):
-        """Считает Precision, Recall и F1 для множеств."""
-        if not true_set and not pred_set:
-            return 1.0, 1.0, 1.0
-        
-        intersection = len(true_set & pred_set)
-        
-        # Precision: сколько найденного реально было в исходнике (защита от галлюцинаций)
-        precision = intersection / len(pred_set) if pred_set else 0
-        
-        # Recall: сколько из исходника мы нашли (защита от потери данных)
-        recall = intersection / len(true_set) if true_set else 0
-        
-        if (precision + recall) == 0:
-            return 0.0, 0.0, 0.0
-            
-        f1 = 2 * (precision * recall) / (precision + recall)
-        return precision, recall, f1
+4.  **СЕМАНТИКА И ФОРМАТ (Игнорировать):**
+    *   Игнорируй markdown-разметку (#, *, |).
+    *   Игнорируй перестановку слов, если смысл сохранен.
+    *   Игнорируй обобщения, если они не искажают факты (Original: "Мы рады приветствовать...", Parsed: "Приветствие").
 
-    def _semantic_similarity(self, text1, text2):
-        """Вычисляет похожесть текстов."""
-        # Быстрый вариант: SequenceMatcher (Левенштейн/Gestalt)
-        return SequenceMatcher(None, text1, text2).ratio()
-        
-        # Вариант с эмбеддингами (более точный, но медленный):
-        # emb1 = self.embedder.encode(text1)
-        # emb2 = self.embedder.encode(text2)
-        # return util.cos_sim(emb1, emb2).item()
+### ПРИМЕРЫ (Few-Shot)
 
-    def evaluate(self, ground_truth, generated_markdown):
-        # 1. Сравнение чисел (Data Match)
-        true_nums = self._extract_numbers(ground_truth)
-        pred_nums = self._extract_numbers(generated_markdown)
-        p_num, r_num, f1_num = self._calculate_f1(true_nums, pred_nums)
+Пример 1 (Идеально):
+Original: "Выручка за 2023 год составила 50 млн рублей. Рост на 10%."
+Parsed: "# Отчет\nВыручка 2023: **50 000 000 руб** (+10 процентов)."
+Verdict: numeric_integrity=true, no_hallucinations=true.
 
-        # 2. Сравнение сущностей (Entity Match)
-        true_ents = self._extract_entities(ground_truth)
-        pred_ents = self._extract_entities(generated_markdown)
-        p_ent, r_ent, f1_ent = self._calculate_f1(true_ents, pred_ents)
+Пример 2 (Ошибка в цифре):
+Original: "Продано 500 единиц товара."
+Parsed: "Продажи: 50 единиц."
+Verdict: numeric_integrity=false (500 != 50).
 
-        # 3. Семантическая близость (Semantic Similarity)
-        # Сравниваем "чистый" текст без чисел, чтобы не дублировать метрики
-        text_sim = self._semantic_similarity(ground_truth, generated_markdown)
+Пример 3 (Галлюцинация):
+Original: "Компания планирует расширение."
+Parsed: "Компания планирует расширение в Китай в 2025 году."
+Verdict: no_hallucinations=false (Про Китай и 2025 год в оригинале не было).
 
-        # Итоговый взвешенный скор
-        final_score = (0.5 * f1_num) + (0.3 * f1_ent) + (0.2 * text_sim)
+Пример 4 (Потеря сущности):
+Original: "Директор по маркетингу: Анна Смирнова."
+Parsed: "Руководство утвердило план."
+Verdict: entities_preserved=false (Потеряно имя Анна Смирнова).
 
-        return {
-            "Total_Score": round(final_score, 3),
-            "Numbers": {"Precision": round(p_num, 3), "Recall": round(r_num, 3), "F1": round(f1_num, 3)},
-            "Entities": {"Precision": round(p_ent, 3), "Recall": round(r_ent, 3), "F1": round(f1_ent, 3)},
-            "Semantic_Sim": round(text_sim, 3)
-        }
+### ФОРМАТ ВЫВОДА (JSON)
 
-# --- Пример использования ---
+Верни ТОЛЬКО валидный JSON без пояснительного текста и markdown-кавычек:
+{
+    "numeric_integrity": boolean,  // true, если ВСЕ числа совпадают (с учетом форматов)
+    "no_hallucinations": boolean,  // true, если нет выдуманных фактов
+    "entities_preserved": boolean, // true, если имена и названия на месте
+    "semantic_match": boolean,     // true, если общий смысл передан верно
+    "critical_errors": ["список конкретных ошибок: неверные числа, лишние факты"],
+    "missing_info": ["список того, что было упущено (имена, детали)"],
+    "reasoning": "Краткий комментарий на русском языке"
+}
 
-ground_truth = """
-Отчет за 2024 год.
-Компания "Рога и Копыта" увеличила выручку на 45%. 
-Всего было продано 1500 единиц товара.
-Директор: Иван Иванов.
-"""
+### ДАННЫЕ ДЛЯ ПРОВЕРКИ
 
-generated_llm_output = """
-# Отчет 2024
-## Финансовые показатели
-Компания **"Рога и Копыта"** показала рост выручки на 45%.
-Объем продаж составил 1500 шт.
-Генеральный директор - Петр Петров.
-"""
+ИСХОДНЫЙ ТЕКСТ:
+{original_text}
 
-evaluator = PresentationEvaluator()
-metrics = evaluator.evaluate(ground_truth, generated_llm_output)
-
-# Вывод в Markdown
-print(f"### Результат оценки\n")
-print(f"**Общий балл (IFS): {metrics['Total_Score']}**\n")
-print(f"| Тип данных | Precision (Лишнее) | Recall (Потерянное) | F1 |")
-print(f"|---|---|---|---|")
-print(f"| Числа | {metrics['Numbers']['Precision']} | {metrics['Numbers']['Recall']} | {metrics['Numbers']['F1']} |")
-print(f"| Сущности | {metrics['Entities']['Precision']} | {metrics['Entities']['Recall']} | {metrics['Entities']['F1']} |")
-print(f"| Семантика | - | - | {metrics['Semantic_Sim']} |")
+РЕЗУЛЬТАТ ПАРСИНГА:
+{parsed_text}
