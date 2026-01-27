@@ -1,0 +1,110 @@
+import re
+import spacy
+from difflib import SequenceMatcher
+
+# Загружаем модель для NER (Named Entity Recognition)
+# python -m spacy download ru_core_news_md
+try:
+    nlp = spacy.load("ru_core_news_md")
+except:
+    print("Не забудь скачать модель: python -m spacy download ru_core_news_md")
+
+class PresentationEvaluator:
+    def __init__(self, use_embeddings=False):
+        self.use_embeddings = use_embeddings
+        # Если нужна глубокая семантика, можно подключить sentence-transformers
+        # self.embedder = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+
+    def _extract_numbers(self, text):
+        """Извлекает числа, даты, проценты."""
+        # Простая регулярка для чисел, включая дробные и с запятыми
+        return set(re.findall(r'-?\d+[.,]?\d*', text))
+
+    def _extract_entities(self, text):
+        """Извлекает именованные сущности (ORG, PER, LOC)."""
+        doc = nlp(text)
+        # Приводим к нижнему регистру для сравнения
+        return set([ent.text.lower() for ent in doc.ents])
+
+    def _calculate_f1(self, true_set, pred_set):
+        """Считает Precision, Recall и F1 для множеств."""
+        if not true_set and not pred_set:
+            return 1.0, 1.0, 1.0
+        
+        intersection = len(true_set & pred_set)
+        
+        # Precision: сколько найденного реально было в исходнике (защита от галлюцинаций)
+        precision = intersection / len(pred_set) if pred_set else 0
+        
+        # Recall: сколько из исходника мы нашли (защита от потери данных)
+        recall = intersection / len(true_set) if true_set else 0
+        
+        if (precision + recall) == 0:
+            return 0.0, 0.0, 0.0
+            
+        f1 = 2 * (precision * recall) / (precision + recall)
+        return precision, recall, f1
+
+    def _semantic_similarity(self, text1, text2):
+        """Вычисляет похожесть текстов."""
+        # Быстрый вариант: SequenceMatcher (Левенштейн/Gestalt)
+        return SequenceMatcher(None, text1, text2).ratio()
+        
+        # Вариант с эмбеддингами (более точный, но медленный):
+        # emb1 = self.embedder.encode(text1)
+        # emb2 = self.embedder.encode(text2)
+        # return util.cos_sim(emb1, emb2).item()
+
+    def evaluate(self, ground_truth, generated_markdown):
+        # 1. Сравнение чисел (Data Match)
+        true_nums = self._extract_numbers(ground_truth)
+        pred_nums = self._extract_numbers(generated_markdown)
+        p_num, r_num, f1_num = self._calculate_f1(true_nums, pred_nums)
+
+        # 2. Сравнение сущностей (Entity Match)
+        true_ents = self._extract_entities(ground_truth)
+        pred_ents = self._extract_entities(generated_markdown)
+        p_ent, r_ent, f1_ent = self._calculate_f1(true_ents, pred_ents)
+
+        # 3. Семантическая близость (Semantic Similarity)
+        # Сравниваем "чистый" текст без чисел, чтобы не дублировать метрики
+        text_sim = self._semantic_similarity(ground_truth, generated_markdown)
+
+        # Итоговый взвешенный скор
+        final_score = (0.5 * f1_num) + (0.3 * f1_ent) + (0.2 * text_sim)
+
+        return {
+            "Total_Score": round(final_score, 3),
+            "Numbers": {"Precision": round(p_num, 3), "Recall": round(r_num, 3), "F1": round(f1_num, 3)},
+            "Entities": {"Precision": round(p_ent, 3), "Recall": round(r_ent, 3), "F1": round(f1_ent, 3)},
+            "Semantic_Sim": round(text_sim, 3)
+        }
+
+# --- Пример использования ---
+
+ground_truth = """
+Отчет за 2024 год.
+Компания "Рога и Копыта" увеличила выручку на 45%. 
+Всего было продано 1500 единиц товара.
+Директор: Иван Иванов.
+"""
+
+generated_llm_output = """
+# Отчет 2024
+## Финансовые показатели
+Компания **"Рога и Копыта"** показала рост выручки на 45%.
+Объем продаж составил 1500 шт.
+Генеральный директор - Петр Петров.
+"""
+
+evaluator = PresentationEvaluator()
+metrics = evaluator.evaluate(ground_truth, generated_llm_output)
+
+# Вывод в Markdown
+print(f"### Результат оценки\n")
+print(f"**Общий балл (IFS): {metrics['Total_Score']}**\n")
+print(f"| Тип данных | Precision (Лишнее) | Recall (Потерянное) | F1 |")
+print(f"|---|---|---|---|")
+print(f"| Числа | {metrics['Numbers']['Precision']} | {metrics['Numbers']['Recall']} | {metrics['Numbers']['F1']} |")
+print(f"| Сущности | {metrics['Entities']['Precision']} | {metrics['Entities']['Recall']} | {metrics['Entities']['F1']} |")
+print(f"| Семантика | - | - | {metrics['Semantic_Sim']} |")
