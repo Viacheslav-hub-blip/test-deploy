@@ -1,0 +1,394 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Итоговый отчёт — антифрод-правило из восьми блоков</title><style>
+:root{--ink:#102238;--muted:#637389;--line:#dbe4ee;--green:#087e69;--gsoft:#e5f6f0;--blue:#2563eb;--navy:#0b1830;--white:#fff;--soft:#f5f8fb;--amber:#96621b;--asoft:#fff5de}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#eef3f8;color:var(--ink);font:15px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif}a{color:#155db0}a:hover{text-decoration:none}
+.shell{max-width:1400px;margin:auto;display:grid;grid-template-columns:246px minmax(0,1fr);gap:28px;padding:24px}.sidebar{position:sticky;top:22px;align-self:start;background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px;max-height:calc(100vh - 44px);overflow:auto}.sidebar strong{font-size:13px;color:var(--green);letter-spacing:.08em;text-transform:uppercase}.sidebar a{display:block;padding:7px 0;font-size:13px;color:#34506c;text-decoration:none;border-bottom:1px solid #eef2f6}.sidebar a:hover{color:var(--green)}.document{min-width:0;background:#fff;border:1px solid var(--line);box-shadow:0 10px 42px #1d335115;border-radius:18px;overflow:hidden}.hero{background:linear-gradient(120deg,#0d2343,#133c53 70%,#0b735c);color:#fff;padding:50px 58px 46px}.eyebrow{text-transform:uppercase;letter-spacing:.17em;font-size:11px;font-weight:700;color:#90d4cd}.hero h1{font-size:39px;line-height:1.14;letter-spacing:-.03em;margin:18px 0}.hero p{max-width:840px;color:#d6e7f1;margin:0;font-size:17px}.hero-meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:25px}.hero-meta span{font-size:12px;color:#eafbf6;border:1px solid #ffffff50;padding:6px 11px;border-radius:20px}.content{padding:35px 58px 65px}h2{font-size:28px;line-height:1.25;letter-spacing:-.025em;margin:47px 0 16px;border-bottom:1px solid var(--line);padding-bottom:13px}h2:first-child{margin-top:0}h3{font-size:20px;line-height:1.4;margin:22px 0 10px}p{margin:10px 0 14px}ul{padding-left:20px}li{margin:5px 0}.lead{font-size:17px;color:#30465a}.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0}.kpi{padding:18px;border:1px solid var(--line);border-radius:12px;background:#fbfdff}.kpi small{display:block;color:var(--muted);font-weight:600;font-size:12px}.kpi b{display:block;font-size:29px;letter-spacing:-.035em;line-height:1.3;margin-top:7px}.kpi.green b{color:var(--green)}.kpi .small{font-size:12px;color:var(--muted)}.notice{padding:18px 20px;border-radius:12px;background:var(--asoft);border-left:4px solid #c38a30;margin:20px 0}.notice.info{background:#edf6ff;border-color:#4087cb}.notice.good{background:var(--gsoft);border-color:var(--green)}.rule-card{border:1px solid var(--line);border-radius:14px;padding:25px;margin:25px 0;page-break-inside:avoid}.top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.badge{font-size:11px;border-radius:30px;padding:4px 10px;font-weight:800;letter-spacing:.03em;color:#145a54;background:#e0f6f0}.badge.neutral{color:#355370;background:#ebf2f9}.rule-card h3{font-size:23px;margin:10px 0}.section-label{font-size:11px;color:var(--green);font-weight:800;letter-spacing:.09em;text-transform:uppercase;margin-top:19px}.condition{background:#f1f6fb;border:1px solid #d9e6f3;border-radius:9px;padding:12px 16px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;line-height:1.75;overflow-wrap:anywhere}.sequence{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0}.node{border:1px solid #bfdacf;background:#f1faf6;border-radius:9px;padding:10px 13px;min-width:125px;flex:1;text-align:center}.node strong{display:block;font:700 13px/1.4 ui-monospace,Consolas,monospace;color:#095d4e}.node em{display:block;font:normal 11px/1.4 Arial,sans-serif;color:#667888;margin-top:5px}.arrow{font-size:24px;color:#0d886f;font-weight:800}.footnotes{background:#fbfcfe;border:1px solid var(--line);padding:12px 15px;border-radius:9px;color:#42566c;font-size:13px}.stats{display:flex;gap:11px;flex-wrap:wrap;margin-top:15px}.stat{font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 9px;background:#fff}.stat b{color:var(--green)}.grid-eight{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:20px 0}.grid-eight a{display:block;text-decoration:none;padding:13px 14px;border:1px solid var(--line);border-radius:9px;font-size:13px;color:var(--ink);background:#fbfdff}.grid-eight a strong{color:var(--green);margin-right:6px}.tablewrap{overflow-x:auto;margin:18px 0}table{border-collapse:collapse;width:100%;font-size:13px;min-width:600px}th,td{border-bottom:1px solid #e2eaf2;padding:11px 10px;text-align:left;vertical-align:top}th{background:#eff5f9;color:#28445c;font-size:12px}td.num,th.num{text-align:right;white-space:nowrap}tbody tr:nth-child(even){background:#fafcfe}.caption{font-size:12px;color:var(--muted);margin:5px 0 20px}.logic{background:#f3f7fb;border:1px solid var(--line);border-radius:12px;padding:17px;margin:19px 0}.logic .center{text-align:center}.logic .topnode{border:1px solid #aacbbf;background:#e9f8f2;border-radius:8px;max-width:410px;padding:12px;margin:0 auto;font-weight:700}.logic .join{margin:8px 0;text-align:center;font-size:18px;color:var(--green)}.logic .mini{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.logic .mini span{background:#fff;border:1px solid var(--line);border-radius:7px;padding:10px;text-align:center;font-size:12px}.logic .result{font-weight:700;color:#006d54;text-align:center;margin-top:10px}.codebox{background:#0c1b2c;border:1px solid #28405c;color:#e3f0ff;border-radius:11px;padding:19px;overflow:auto;white-space:pre;tab-size:4;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:640px}.rule-text{background:#f5f8fb;border:1px solid var(--line);border-radius:11px;padding:19px;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.66 ui-monospace,SFMono-Regular,Consolas,monospace}.file-links{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}.file-links a{padding:10px 14px;border:1px solid #a8cfc5;background:#e8f8f2;color:#0a5d4d;text-decoration:none;border-radius:9px;font-size:13px;font-weight:700}details{border:1px solid var(--line);border-radius:12px;padding:14px 17px;margin:14px 0}summary{cursor:pointer;font-weight:700;color:#1e4d64}.footer{color:#718297;font-size:12px;border-top:1px solid var(--line);padding-top:20px;margin-top:45px}.two-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}.two-cols>div{border:1px solid var(--line);padding:16px;border-radius:10px}.copy{background:#e8f7f1;border-left:3px solid var(--green);padding:15px 17px;border-radius:7px}
+@media(max-width:1000px){.shell{display:block;padding:0}.sidebar{position:static;max-height:none;border-radius:0;display:flex;gap:12px;flex-wrap:wrap}.sidebar strong{display:block;width:100%}.sidebar a{border:0}.document{border-radius:0}.content{padding:24px}.hero{padding:42px 28px}.hero h1{font-size:31px}.kpi-row{grid-template-columns:repeat(2,1fr)}}@media(max-width:570px){.grid-eight,.two-cols{grid-template-columns:1fr}.logic .mini{grid-template-columns:repeat(2,1fr)}.sequence{flex-direction:column}.arrow{transform:rotate(90deg)}.node{width:100%}.hero h1{font-size:28px}.kpi b{font-size:24px}}
+@media print{@page{size:A4;margin:15mm}body{background:#fff;font:10pt/1.43 Arial,sans-serif}.shell{display:block;padding:0}.sidebar,.file-links{display:none}.document{border:0;box-shadow:none}.hero{padding:22px 24px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.hero h1{font-size:25pt}.content{padding:14px 16px}.kpi-row{grid-template-columns:repeat(4,1fr)}.kpi{padding:9px}.kpi b{font-size:17pt}.rule-card{margin:12px 0;padding:13px;break-inside:avoid}.rule-card h3{font-size:15pt}.rule-card .section-label{margin-top:8px}.rule-card p{margin:5px 0}.codebox{max-height:none;white-space:pre-wrap;overflow-wrap:anywhere;color:#182d44;background:#f4f7fa;border:1px solid #d8e4ed;font-size:7pt}.section{break-before:page}.footer{margin-top:20px}h2{font-size:18pt;break-after:avoid}.logic .mini{grid-template-columns:repeat(4,1fr)}details{break-inside:auto}details:not([open]) pre{display:none}}
+</style></head><body><div class="shell"><aside class="sidebar"><strong>Содержание отчёта</strong>
+<a href="#summary">1. Резюме и назначение</a><a href="#method">2. Данные и методика</a><a href="#architecture">3. Логика правила</a><a href="#blocks">4. Описание восьми блоков</a><a href="#block1">1. Многократное снятие наличных</a><a href="#block2">2. Смена каналов оплаты с последующей финансовой операцией</a><a href="#block3">3. Высокорисковая покупка через ePOS</a><a href="#block4">4. Рисковое оформление C2B-подписки</a><a href="#block5">5. Очень высокий риск операции с учётом суммы</a><a href="#block6">6. Рисковый платёж юридическому лицу</a><a href="#block7">7. Цифровая активность → операция без OTP → финансовая операция</a><a href="#block8">8. Просмотр счёта перед рисковой интернет-покупкой</a><a href="#business">5. Банковский формат И / ИЛИ</a><a href="#research">6. Результаты исследования</a><a href="#quality">7. Качество, риски и ограничения</a><a href="#sql">8. Рабочий SQL</a><a href="#verify">9. Проверочный SQL</a><a href="#handoff">10. Передача и файлы</a></aside>
+<main class="document"><header class="hero"><div class="eyebrow">Аналитическое исследование · версия 21.09.2026</div><h1>Итоговый отчёт по антифрод-правилу из восьми блоков</h1><p>Назначение, точные условия, интерпретация рисковых цепочек, формулировка групп И/ИЛИ, реализация на SQL и результаты исследования на обезличенной выборке.</p><div class="hero-meta"><span>Все события включены</span><span>SQLite · 8 блоков</span><span>1 000 клиентов</span><span>Исследовательский статус</span></div></header><div class="content">
+<section id="summary"><h2>1. Краткое резюме</h2><p class="lead">Правило оценивает текущую операцию клиента с учётом предшествующих действий, сочетания каналов, повторных снятий наличных, скора существующей модели и суммы. Если выполняется хотя бы один из восьми блоков, возвращается <strong>1</strong>, иначе <strong>0</strong>.</p>
+<div class="kpi-row"><div class="kpi green"><small>Recall · подбор и оценка на одной выборке</small><b>70,0%</b><div class="small">70 / 100 клиентов</div></div><div class="kpi"><small>Precision · та же выборка</small><b>59,83%</b><div class="small">70 TP / 47 FP</div></div><div class="kpi"><small>Раннее обнаружение ≥ 1 минуты</small><b>40,0%</b><div class="small">40 / 100 клиентов</div></div><div class="kpi"><small>Recall · перевыбор правила на пяти разбиениях</small><b>62,0%</b><div class="small">62 TP / 87 FP</div></div></div>
+<div class="notice"><strong>Статус результата.</strong> 70% полноты — исследовательская оценка на той же выборке, на которой отобраны пороги и группы; это не подтверждённая производственная эффективность. Правило не следует использовать для автоматической блокировки без независимой проверки. Отдельный показатель раннего обнаружения значительно ниже.</div>
+<p>В SQL не используются метки <code>fraud_time</code>, <code>last_resol</code> или иные результаты расследования. Они применяются исключительно во внешней процедуре проверки качества.</p></section>
+<section id="method"><h2>2. Источник данных и методика</h2><p>Источник: <code>sample_1000_clients_task1_basic_with_legitimate_test_clean (1).xlsx</code>; обезличенная выборка из <strong>37 791 события</strong> и <strong>1 000 клиентов</strong>. На клиентском уровне 100 историй с заполненным <code>fraud_time</code> и 900 без него. Положительный класс для оценки — клиент с отмеченной историей мошенничества; именно момент <code>fraud_time</code> задаёт границу времени для оценки раннего обнаружения.</p>
+<p>При анализе учитывались все типы событий: POS, ePOS, переводы, снятия, QR и прочие операции не исключались. Ненужное допущение о том, что события цепочки обязаны идти подряд, снято: необходимы только их порядок, принадлежность одному клиенту и временные ограничения.</p>
+<div class="two-cols"><div><strong>Расчёт в момент операции</strong><p>Текущее событие с временем t₀ и ранее произошедшие события того же <code>epk_id</code>. Модельный скор и сумма берутся из текущего события. Интервалы вычисляются непосредственно по <code>event_time</code>.</p></div><div><strong>Оценка исследования</strong><p>При сопоставлении клиентов применено 48-часовое окно наблюдения. Для фродовых историй его конец задаётся временем мошенничества, для легитимных — последним доступным событием. Такой протокол исследовательский, а не способ работы рабочего правила.</p></div></div>
+<div class="notice info"><strong>Особенность разметки.</strong> Заполненный <code>fraud_time</code> у строк истории может обозначать будущий момент фрода, поэтому при проверке качества он трактуется как метка истории и отметка времени, а не как допустимый входной признак для прогнозирования.</div>
+</section>
+<section id="architecture"><h2>3. Общая схема принятия решения</h2><div class="logic"><div class="topnode center">Текущая операция: epk_id, t₀, sub_type, event_type, скор, сумма</div><div class="join">↓</div><div class="mini"><span>Блок 1<br>Повторное снятие</span><span>Блок 2<br>ePOS → POS → фин. операция</span><span>Блок 3<br>Риск ePOS</span><span>Блок 4<br>Подписка C2B</span><span>Блок 5<br>Скор + сумма</span><span>Блок 6<br>Платёж юрлицу</span><span>Блок 7<br>VK → без OTP → фин. операция</span><span>Блок 8<br>ACCOUNT → ePOS</span></div><div class="join">Логическое ИЛИ между блоками ↓</div><div class="result">Хотя бы один блок выполнен → antifraud_flag = 1; иначе = 0</div></div><p>Результат — признак риска, а не подтверждение факта мошенничества. Блоки пересекаются: одна операция может активировать сразу несколько условий, а один клиент — несколько событийных срабатываний.</p></section>
+<section id="blocks"><h2>4. Подробное описание восьми блоков</h2><p>Для каждого блока ниже приведены точные условия, последовательность при наличии, смысл и ограничения. Числа в карточках показывают количество <em>уникальных клиентов</em> с совпадением в сопоставимом 48-часовом протоколе; дополнения рассчитаны при последовательном добавлении блоков 1–8.</p><div class="grid-eight"><a href="#block1"><strong>01</strong> Многократное снятие наличных</a><a href="#block2"><strong>02</strong> Смена каналов оплаты с последующей финансовой операцией</a><a href="#block3"><strong>03</strong> Высокорисковая покупка через ePOS</a><a href="#block4"><strong>04</strong> Рисковое оформление C2B-подписки</a><a href="#block5"><strong>05</strong> Очень высокий риск операции с учётом суммы</a><a href="#block6"><strong>06</strong> Рисковый платёж юридическому лицу</a><a href="#block7"><strong>07</strong> Цифровая активность → операция без OTP → финансовая операция</a><a href="#block8"><strong>08</strong> Просмотр счёта перед рисковой интернет-покупкой</a></div><article class="rule-card" id="block1">
+<div class="top"><span class="badge">БЛОК 1</span><span class="badge neutral">Повторяемость операций · 48 часов</span></div>
+<h3>Многократное снятие наличных</h3><div class="section-label">Точное условие</div>
+<div class="condition">COUNT(событий ATM_CASH того же epk_id за 48 часов, включая текущее) ≥ 2</div><div class="sequence" aria-label="Последовательность событий"><div class="node"><strong>ATM_CASH</strong><em>Первое снятие наличных</em></div><span class="arrow" aria-hidden="true">→</span><div class="node"><strong>ATM_CASH</strong><em>Повторное снятие наличных</em></div></div>
+<div class="section-label">Смысл</div><p>Клиент неоднократно снимает наличные в сравнительно короткое время. Это может соответствовать постепенному обналичиванию средств под воздействием мошенника, но такая активность бывает и легитимной.</p>
+<div class="section-label">Особенности и ограничения</div><p>Нет ограничений по сумме, возрасту или скору. Временное окно скользит относительно текущей операции; между снятиями допускаются любые другие события. Повторные ATM_CASH учитываются как отдельные строки даже при одинаковом времени.</p>
+<div class="section-label">Производный параметр / банковская запись</div><div class="footnotes"><code>count_ATM_CASH_48h &gt;= 2</code><br>COUNT(*) для того же epk_id, где sub_type = ATM_CASH и t − 2880 минут ≤ event_time ≤ t.</div>
+<div class="stats"><span class="stat">Обнаружено клиентов с фродом: <b>3</b></span><span class="stat">Легитимных клиентов: <b>2</b></span><span class="stat">Дополнительно к предыдущим блокам: <b>+3 TP / +2 FP</b></span></div>
+</article><article class="rule-card" id="block2">
+<div class="top"><span class="badge">БЛОК 2</span><span class="badge neutral">Цепочка из трёх событий · 24 часа</span></div>
+<h3>Смена каналов оплаты с последующей финансовой операцией</h3><div class="section-label">Точное условие</div>
+<div class="condition">event_type IN (PAYMENT, WITHDRAW) И dsl_score ≥ 400 И существует EPOS_PURCHASE(A) → POS_PURCHASE(B) → текущее событие, где tA &lt; tB &lt; t0 и t0 − tA ≤ 1440 минут.</div><div class="sequence" aria-label="Последовательность событий"><div class="node"><strong>EPOS_PURCHASE</strong><em>Покупка в интернете</em></div><span class="arrow" aria-hidden="true">→</span><div class="node"><strong>POS_PURCHASE</strong><em>Оплата через POS-терминал</em></div><span class="arrow" aria-hidden="true">→</span><div class="node"><strong>PAYMENT / WITHDRAW</strong><em>Текущая операция; скор ≥ 400</em></div></div>
+<div class="section-label">Смысл</div><p>Блок выявляет смену способов распоряжения средствами с последующей операцией, которую модель сочла рискованной. Интернет-покупки и покупки через POS сами по себе вполне могут быть обычными.</p>
+<div class="section-label">Особенности и ограничения</div><p>Строго сохраняется порядок событий, но их соседство не требуется. Все три события должны принадлежать одному epk_id; отсчёт 24 часов идёт от EPOS_PURCHASE до текущего события.</p>
+<div class="section-label">Производный параметр / банковская запись</div><div class="footnotes"><code>(event_type = PAYMENT ИЛИ event_type = WITHDRAW) И score ≥ 400 И EXISTS A, B: A=EPOS_PURCHASE, B=POS_PURCHASE, tA &lt; tB &lt; t0, t0−tA ≤ 1440 мин</code><br>A и B выбираются из событий текущего клиента; любая иная активность между ними допускается.</div>
+<div class="stats"><span class="stat">Обнаружено клиентов с фродом: <b>12</b></span><span class="stat">Легитимных клиентов: <b>6</b></span><span class="stat">Дополнительно к предыдущим блокам: <b>+11 TP / +5 FP</b></span></div>
+</article><article class="rule-card" id="block3">
+<div class="top"><span class="badge">БЛОК 3</span><span class="badge neutral">Одиночная операция · Без истории</span></div>
+<h3>Высокорисковая покупка через ePOS</h3><div class="section-label">Точное условие</div>
+<div class="condition">sub_type = EPOS_PURCHASE И dsl_score ≥ 450</div>
+<div class="section-label">Смысл</div><p>Обнаруживает интернет-покупки, которым существующая модель присвоила повышенную оценку риска.</p>
+<div class="section-label">Особенности и ограничения</div><p>Для срабатывания достаточно одной текущей операции: дополнительная последовательность и сумма не проверяются.</p>
+<div class="section-label">Производный параметр / банковская запись</div><div class="footnotes"><code>sub_type = EPOS_PURCHASE И cards_dsl_model_risk_score ≥ 450</code><br>Скор берётся из текущего события, а не как максимум будущих операций.</div>
+<div class="stats"><span class="stat">Обнаружено клиентов с фродом: <b>38</b></span><span class="stat">Легитимных клиентов: <b>20</b></span><span class="stat">Дополнительно к предыдущим блокам: <b>+30 TP / +15 FP</b></span></div>
+</article><article class="rule-card" id="block4">
+<div class="top"><span class="badge">БЛОК 4</span><span class="badge neutral">Одиночная операция · Без истории</span></div>
+<h3>Рисковое оформление C2B-подписки</h3><div class="section-label">Точное условие</div>
+<div class="condition">sub_type = C2B_SUBSCRIBE И dsl_score ≥ 250</div>
+<div class="section-label">Смысл</div><p>Выявляет потенциально подозрительные операции оформления подписки или регулярного платежа в пользу организации.</p>
+<div class="section-label">Особенности и ограничения</div><p>Для данного подтипа установлен отдельный более низкий порог. Не проверяются сумма и дополнительные события; возможно срабатывание на обычные подписки.</p>
+<div class="section-label">Производный параметр / банковская запись</div><div class="footnotes"><code>sub_type = C2B_SUBSCRIBE И cards_dsl_model_risk_score ≥ 250</code><br>Отсутствующий скор не удовлетворяет сравнению.</div>
+<div class="stats"><span class="stat">Обнаружено клиентов с фродом: <b>10</b></span><span class="stat">Легитимных клиентов: <b>7</b></span><span class="stat">Дополнительно к предыдущим блокам: <b>+6 TP / +5 FP</b></span></div>
+</article><article class="rule-card" id="block5">
+<div class="top"><span class="badge">БЛОК 5</span><span class="badge neutral">Универсальный фильтр · Любой подтип</span></div>
+<h3>Очень высокий риск операции с учётом суммы</h3><div class="section-label">Точное условие</div>
+<div class="condition">dsl_score ≥ 800 И inrubles ≥ 500</div>
+<div class="section-label">Смысл</div><p>Универсально выявляет операции с очень высоким скором модели и суммой от 500 рублей, даже если их подтип не описан отдельными сценариями.</p>
+<div class="section-label">Особенности и ограничения</div><p>Подтип, возраст и исторические события не ограничиваются. Высокий скор — оценка модели, а не доказательство фрода; качество зависит от калибровки модели.</p>
+<div class="section-label">Производный параметр / банковская запись</div><div class="footnotes"><code>cards_dsl_model_risk_score ≥ 800 И inrubles ≥ 500</code><br>Сумма интерпретируется в рублях; пустые значения не удовлетворяют порогу.</div>
+<div class="stats"><span class="stat">Обнаружено клиентов с фродом: <b>19</b></span><span class="stat">Легитимных клиентов: <b>7</b></span><span class="stat">Дополнительно к предыдущим блокам: <b>+10 TP / +6 FP</b></span></div>
+</article><article class="rule-card" id="block6">
+<div class="top"><span class="badge">БЛОК 6</span><span class="badge neutral">Одиночная операция · Без истории</span></div>
+<h3>Рисковый платёж юридическому лицу</h3><div class="section-label">Точное условие</div>
+<div class="condition">sub_type = RURPAYJURSB И dsl_score ≥ 450</div>
+<div class="section-label">Смысл</div><p>Выявляет платежи юридическому лицу, которые антифрод-модель оценила как рискованные. Это может входить в сценарий вывода средств при социальной инженерии.</p>
+<div class="section-label">Особенности и ограничения</div><p>Контакт с мошенником здесь НЕ подтверждается: условие не проверяет ни звонки, ни мессенджеры. Блок срабатывает непосредственно на текущем платеже.</p>
+<div class="section-label">Производный параметр / банковская запись</div><div class="footnotes"><code>sub_type = RURPAYJURSB И cards_dsl_model_risk_score ≥ 450</code><br>Исторические события не требуются.</div>
+<div class="stats"><span class="stat">Обнаружено клиентов с фродом: <b>6</b></span><span class="stat">Легитимных клиентов: <b>3</b></span><span class="stat">Дополнительно к предыдущим блокам: <b>+4 TP / +2 FP</b></span></div>
+</article><article class="rule-card" id="block7">
+<div class="top"><span class="badge">БЛОК 7</span><span class="badge neutral">Цепочка из трёх событий · 24 часа</span></div>
+<h3>Цифровая активность → операция без OTP → финансовая операция</h3><div class="section-label">Точное условие</div>
+<div class="condition">event_type IN (PAYMENT, WITHDRAW) И dsl_score ≥ 400 И существует VK_CHECK(A) → WITHOUT_OTP(B) → текущее событие, где tA &lt; tB &lt; t0 и t0 − tA ≤ 1440 минут.</div><div class="sequence" aria-label="Последовательность событий"><div class="node"><strong>VK_CHECK</strong><em>Проверка, связанная с VK</em></div><span class="arrow" aria-hidden="true">→</span><div class="node"><strong>WITHOUT_OTP</strong><em>Событие без OTP</em></div><span class="arrow" aria-hidden="true">→</span><div class="node"><strong>PAYMENT / WITHDRAW</strong><em>Текущая операция; скор ≥ 400</em></div></div>
+<div class="section-label">Смысл</div><p>Ищет комбинацию цифровой активности, события без OTP и последующей рискованной финансовой операции. Это гипотеза для выявления сценариев социальной инженерии или необычного подтверждения.</p>
+<div class="section-label">Особенности и ограничения</div><p>Коды VK_CHECK и WITHOUT_OTP сами по себе не доказывают контакт с мошенником или компрометацию подтверждения. Их точное значение требует сверки с банковским справочником. Между событиями допускаются любые другие действия.</p>
+<div class="section-label">Производный параметр / банковская запись</div><div class="footnotes"><code>(event_type = PAYMENT ИЛИ event_type = WITHDRAW) И score ≥ 400 И EXISTS A, B: A=VK_CHECK, B=WITHOUT_OTP, tA &lt; tB &lt; t0, t0−tA ≤ 1440 мин</code><br>Строгая хронология и общий интервал ≤ 24 часов; A, B и текущее событие имеют одинаковый epk_id.</div>
+<div class="stats"><span class="stat">Обнаружено клиентов с фродом: <b>5</b></span><span class="stat">Легитимных клиентов: <b>5</b></span><span class="stat">Дополнительно к предыдущим блокам: <b>+2 TP / +3 FP</b></span></div>
+</article><article class="rule-card" id="block8">
+<div class="top"><span class="badge">БЛОК 8</span><span class="badge neutral">Цепочка из двух событий · 24 часа</span></div>
+<h3>Просмотр счёта перед рисковой интернет-покупкой</h3><div class="section-label">Точное условие</div>
+<div class="condition">sub_type = EPOS_PURCHASE И dsl_score ≥ 300 И существует более ранний ACCOUNT(A) с тем же epk_id: 0 &lt; t0 − tA ≤ 1440 минут.</div><div class="sequence" aria-label="Последовательность событий"><div class="node"><strong>ACCOUNT</strong><em>Событие, связанное со счётом</em></div><span class="arrow" aria-hidden="true">→</span><div class="node"><strong>EPOS_PURCHASE</strong><em>Текущая операция; скор ≥ 300</em></div></div>
+<div class="section-label">Смысл</div><p>Сочетание активности по счёту и последующей интернет-покупки с повышенным скором может соответствовать проверке доступных средств перед их расходованием.</p>
+<div class="section-label">Особенности и ограничения</div><p>Название блока — аналитическая интерпретация. Код ACCOUNT не обязательно означает просмотр баланса: точное определение следует проверить в справочнике событий. Порог 300 ниже, поскольку присутствует дополнительное историческое условие.</p>
+<div class="section-label">Производный параметр / банковская запись</div><div class="footnotes"><code>sub_type = EPOS_PURCHASE И score ≥ 300 И EXISTS A: A=ACCOUNT, 0 &lt; t0−tA ≤ 1440 мин</code><br>ACCOUNT и текущая покупка принадлежат одному epk_id; промежуточные события разрешены.</div>
+<div class="stats"><span class="stat">Обнаружено клиентов с фродом: <b>18</b></span><span class="stat">Легитимных клиентов: <b>16</b></span><span class="stat">Дополнительно к предыдущим блокам: <b>+4 TP / +9 FP</b></span></div>
+</article></section>
+<section id="business" class="section"><h2>5. Правило в банковском формате групп И / ИЛИ</h2><p>Текущая операция обозначена <code>t₀ = event_time</code>. Для цепочек A → B → текущее событие требуется <code>tA &lt; tB &lt; t₀</code>, а от A до t₀ проходит не больше 1440 минут. Все события имеют один <code>epk_id</code>. Между ними допускаются операции любых типов.</p><div class="rule-text">ИССЛЕДОВАТЕЛЬСКОЕ ПРАВИЛО АНТИФРОДА — ПОЛНАЯ ВЫБОРКА, БЕЗ ИСКЛЮЧЕНИЙ СОБЫТИЙ
+Дата анализа: 21.09.2026. Данные: sample_1000_clients_task1_basic_with_legitimate_test_clean (1).xlsx
+Область: текущая операция клиента epk_id, время t = event_time, и только уже произошедшие события того же epk_id.
+Оценка: 1, если истинна хотя бы ОДНА из восьми групп; иначе 0.
+
+Группа 1. Повторные операции ATM_CASH
+:count_ATM_CASH_48h: &gt;= 2
+Расчёт непосредственно в правиле: COUNT(событие, у которого sub_type=&quot;ATM_CASH&quot; И epk_id=epk_id текущего события И t-2880 минут &lt;= event_time &lt;= t).
+
+ИЛИ
+Группа 2. ePOS → POS → рисковая финансовая операция
+:event_type:=&quot;PAYMENT&quot; ИЛИ :event_type:=&quot;WITHDRAW&quot;
+И :cards_dsl_model_risk_score: &gt;= 400
+И существуют A, B с тем же epk_id, для которых:
+:sub_type[A]:=&quot;EPOS_PURCHASE&quot; И :sub_type[B]:=&quot;POS_PURCHASE&quot;
+И 0 &lt; (event_time[B]-event_time[A])
+И 0 &lt; (t-event_time[B])
+И (t-event_time[A]) &lt;= 1440 минут.
+
+ИЛИ
+Группа 3. Рисковая ePOS-операция
+:sub_type:=&quot;EPOS_PURCHASE&quot; И :cards_dsl_model_risk_score:&gt;=450.
+
+ИЛИ
+Группа 4. Рисковая C2B-подписка
+:sub_type:=&quot;C2B_SUBSCRIBE&quot; И :cards_dsl_model_risk_score:&gt;=250.
+
+ИЛИ
+Группа 5. Очень высокий скор + сумма
+:cards_dsl_model_risk_score:&gt;=800 И :inrubles:&gt;=500.
+
+ИЛИ
+Группа 6. Рисковый платёж юрлицу
+:sub_type:=&quot;RURPAYJURSB&quot; И :cards_dsl_model_risk_score:&gt;=450.
+
+ИЛИ
+Группа 7. VK_CHECK → WITHOUT_OTP → финансовая операция
+:event_type:=&quot;PAYMENT&quot; ИЛИ :event_type:=&quot;WITHDRAW&quot;
+И :cards_dsl_model_risk_score:&gt;=400
+И существуют A,B того же epk_id с:
+:sub_type[A]:=&quot;VK_CHECK&quot; И :sub_type[B]:=&quot;WITHOUT_OTP&quot;
+И 0 &lt; event_time[B]-event_time[A]
+И 0 &lt; t-event_time[B]
+И t-event_time[A] &lt;= 1440 минут.
+
+ИЛИ
+Группа 8. Просмотр счёта → ePOS
+:sub_type:=&quot;EPOS_PURCHASE&quot; И :cards_dsl_model_risk_score:&gt;=300
+И существует A, где :sub_type[A]:=&quot;ACCOUNT&quot;, epk_id[A]=epk_id текущей операции,
+И 0 &lt; (t-event_time[A]) &lt;= 1440 минут.
+
+ТЕХНИЧЕСКАЯ СЕМАНТИКА
+- Между событиями разрешены любые промежуточные операции; фильтра исключений НЕТ.
+- Временной интервал для цепочек A→B→текущая операция — максимум 24 часа от A до текущей.
+- Для повторов ATM_CASH — скользящее 48-часовое окно непосредственно на текущем событии.
+- Скор cards_dsl_model_risk_score приводится к числу; NULL/пусто не удовлетворяет условиям со скором.
+- Сумма inrubles приводится к числу, валюта — рубли; отсутствующее значение не удовлетворяет сравнению &gt;=500.
+- Для событий A и B не используется fraud_time, last_resol, is_fraud и любая информация о будущих событиях.
+- В файле нет возрастного поля; возрастной фильтр не вводился.
+
+МЕТРИКИ / ОГРАНИЧЕНИЯ
+На той же полной выборке, на которой выбраны условия, в сопоставимом 48-часовом окне:
+TP=70 FP=47 FN=30 TN=853 Precision=59.83% Recall=70.00% F1=0.6452 FPR=5.22%.
+Раннее обнаружение &gt;=1 минуты при тех же условиях: TP=40 FP=47, Recall=40%, Precision=45.98%.
+Перекрёстная проверка ПЕРЕВЫБОРА состава правила (5 разбиений, штраф 0.4): TP=62 FP=87, Recall=62%, Precision=41.61%.
+При оценке отрицательных клиентов за полную неделю вместо 48 часов: TP=70 FP=145, Precision=32.56%.
+Это исследовательское правило, НЕ подтверждённое независимой выборкой и НЕ предназначенное для автоматической блокировки.
+</div><p class="caption">Текст приведён по итоговому оригинальному правилу без изменения восьми условий и порогов. Для блоков с операторами И / ИЛИ при реализации обязательны скобки, чтобы не изменить приоритет операций.</p></section>
+<section id="research" class="section"><h2>6. Результаты исследования</h2><h3>6.1. Вклад отдельных блоков</h3><div class="tablewrap"><table><thead><tr><th>№</th><th>Блок</th><th class="num">Фрод-клиенты</th><th class="num">Легитимные</th><th class="num">Новые TP</th><th class="num">Новые FP</th></tr></thead><tbody><tr><td>1</td><td><a href="#block1">Многократное снятие наличных</a></td><td class="num">3</td><td class="num">2</td><td class="num">+3</td><td class="num">+2</td></tr>
+<tr><td>2</td><td><a href="#block2">Смена каналов оплаты с последующей финансовой операцией</a></td><td class="num">12</td><td class="num">6</td><td class="num">+11</td><td class="num">+5</td></tr>
+<tr><td>3</td><td><a href="#block3">Высокорисковая покупка через ePOS</a></td><td class="num">38</td><td class="num">20</td><td class="num">+30</td><td class="num">+15</td></tr>
+<tr><td>4</td><td><a href="#block4">Рисковое оформление C2B-подписки</a></td><td class="num">10</td><td class="num">7</td><td class="num">+6</td><td class="num">+5</td></tr>
+<tr><td>5</td><td><a href="#block5">Очень высокий риск операции с учётом суммы</a></td><td class="num">19</td><td class="num">7</td><td class="num">+10</td><td class="num">+6</td></tr>
+<tr><td>6</td><td><a href="#block6">Рисковый платёж юридическому лицу</a></td><td class="num">6</td><td class="num">3</td><td class="num">+4</td><td class="num">+2</td></tr>
+<tr><td>7</td><td><a href="#block7">Цифровая активность → операция без OTP → финансовая операция</a></td><td class="num">5</td><td class="num">5</td><td class="num">+2</td><td class="num">+3</td></tr>
+<tr><td>8</td><td><a href="#block8">Просмотр счёта перед рисковой интернет-покупкой</a></td><td class="num">18</td><td class="num">16</td><td class="num">+4</td><td class="num">+9</td></tr><tr style="font-weight:800;background:#e8f8f2"><td colspan="4">Итого после объединения восьми блоков</td><td class="num">70</td><td class="num">47</td></tr></tbody></table></div><p class="caption">Столбцы «Фрод-клиенты» и «Легитимные» показывают самостоятельный охват блока; их нельзя складывать из-за пересечений. «Новые TP/FP» — прирост к объединению предыдущих блоков в порядке 1 → 8; сумма приростов равна итоговому результату.</p>
+<h3>6.2. Матрица ошибок и показатели</h3><div class="tablewrap"><table><thead><tr><th>Исход</th><th class="num">Истинный фрод</th><th class="num">Легитимный клиент</th></tr></thead><tbody><tr><td>Правило сработало</td><td class="num">70 (TP)</td><td class="num">47 (FP)</td></tr><tr><td>Правило не сработало</td><td class="num">30 (FN)</td><td class="num">853 (TN)</td></tr></tbody></table></div><p><strong>Recall = 70/(70+30) = 70,00%;</strong> <strong>Precision = 70/(70+47) = 59,83%;</strong> F1 = 64,52%; FPR = 47/900 = 5,22%. Единица расчёта — уникальный клиент, а не число сработавших строк SQL.</p>
+<h3>6.3. Сравнение протоколов проверки</h3><div class="tablewrap"><table><thead><tr><th>Протокол</th><th class="num">TP</th><th class="num">FP</th><th class="num">Recall</th><th class="num">Precision</th></tr></thead><tbody>
+<tr><td>8 блоков; исторический протокол 48 часов, подбор и оценка на одной выборке</td><td class="num">70</td><td class="num">47</td><td class="num">70,0%</td><td class="num">59,83%</td></tr>
+<tr><td>Тот же рабочий SQL по всей доступной истории; оценка срабатываний в 48-часовом окне</td><td class="num">70</td><td class="num">55</td><td class="num">70,0%</td><td class="num">56,0%</td></tr>
+<tr><td>Мониторинг отрицательных клиентов за всю доступную неделю</td><td class="num">70</td><td class="num">145</td><td class="num">70,0%</td><td class="num">32,56%</td></tr>
+<tr><td>Перевыбор групп в пяти разбиениях; прогнозы на неучаствовавших клиентах</td><td class="num">62</td><td class="num">87</td><td class="num">62,0%</td><td class="num">41,61%</td></tr>
+<tr><td>Раннее обнаружение ≥ 1 минуты в исходном протоколе</td><td class="num">40</td><td class="num">47</td><td class="num">40,0%</td><td class="num">45,98%</td></tr></tbody></table></div><p class="caption">Строки представляют разные постановки и окна наблюдения; их не следует интерпретировать как оценки на одной независимой контрольной выборке. При раннем обнаружении TP=40 и FN=60, даже если клиент позднее всё-таки был обнаружен.</p>
+<h3>6.4. Сопоставление с машинным обучением</h3><p>В исследовании проверялись деревья решений, случайный лес, Extra Trees, CatBoost, LightGBM, XGBoost, гистограммный бустинг и логистическая регрессия. Первоначальные высокие оценки части моделей оказались чувствительны к календарным признакам и различной длительности выгрузки. Для строгого сравнения исключены признаки дня недели и длительности истории.</p><div class="tablewrap"><table><thead><tr><th>Вариант более строгой проверки</th><th class="num">TP</th><th class="num">FP</th><th class="num">Recall</th><th class="num">Precision</th></tr></thead><tbody><tr><td>CatBoost; вложенная проверка по клиентам</td><td class="num">70</td><td class="num">144</td><td class="num">70,0%</td><td class="num">32,71%</td></tr><tr><td>XGBoost; вложенная проверка по клиентам</td><td class="num">71</td><td class="num">157</td><td class="num">71,0%</td><td class="num">31,14%</td></tr><tr><td>CatBoost, обученный на раннем выявлении; вложенная проверка</td><td class="num">77</td><td class="num">356</td><td class="num">77,0%</td><td class="num">17,78%</td></tr></tbody></table></div><p class="caption">Результаты моделей и правила получены разными процедурами отбора; это исследовательское сопоставление, а не утверждение, что одна система статистически превосходит другую в эксплуатации.</p></section>
+<section id="quality"><h2>7. Интерпретация и ограничения</h2><div class="notice"><strong>1. Переобучение и подтверждение качества.</strong> Нельзя считать выборочные 70% гарантированным Recall: блоки подбирались по этим же клиентам, а при повторном выборе на пяти разбиениях Recall составил 62%.</div><div class="notice"><strong>2. Раннее предупреждение.</strong> 70 из 100 охвачены не позднее момента фрода в исследовательской оценке; минимум за минуту до него — лишь 40 из 100. Для предотвращения ущерба второе число важнее общего клиентского охвата.</div><div class="notice"><strong>3. Неодинаковые окна.</strong> Сравнение двухдневных фродовых историй с целой неделей легитимных наблюдений увеличивает число возможностей для ложного срабатывания. При расширении горизонта для легитимных клиентов FP выросло до 145.</div><div class="notice"><strong>4. Полная история меняет семантику подсчёта.</strong> Для ATM_CASH прежний оценочный код считал события только внутри обрезанного окна, а рабочий SQL видит более ранние операции. Поэтому без обрезки входной истории при оценке в последних 48 часах FP=55, а не 47.</div><div class="notice info"><strong>5. Справочники и последствия.</strong> Значения ACCOUNT, VK_CHECK и WITHOUT_OTP следует уточнить по внутренним справочникам. Срабатывание должно рассматриваться как гипотеза риска; решение о блокировке требует отдельной проверки бизнес-эффекта и независимой валидации.</div>
+<p><strong>Дальнейшая проверка:</strong> независимая временная выборка, одинаковые периоды наблюдения, отдельный показатель предупреждения до операции, сравнение частот по сценариям и оценка стоимости ложных срабатываний.</p></section>
+<section id="sql" class="section"><h2>8. Исполняемое SQL-правило</h2><p>Ниже — полный рабочий запрос для <strong>SQLite 3.25+</strong>. Он создаёт индексы и представление <code>antifraud_event_flags</code> со всеми восемью флагами, итоговым <code>antifraud_flag</code> и перечислением сработавших групп <code>triggered_groups</code>. Вход: таблица <code>events</code> с исходными колонками. <code>rowid</code> — служебный идентификатор строки SQLite, сохраняющий дубликаты при выдаче.</p><div class="file-links"><a href="antifraud_recall70_rule.sql">Скачать исполняемый SQL</a><a href="antifraud_events_sample.sqlite">Открыть пример SQLite-базы</a></div>
+<pre class="codebox">-- SQLite 3.25+; входная таблица events создана из исходного Excel.
+-- Обязательные колонки: epk_id, event_time, event_type, sub_type,
+-- cards_dsl_model_risk_score, inrubles.
+-- event_time хранится в ISO 8601: YYYY-MM-DD HH:MM:SS.
+-- Входные данные не фильтруются по типам событий.
+-- Метки fraud_time/last_resol/source_fraud НИКОГДА не используются при вычислении флагов.
+-- В обычной SQLite-таблице rowid идентифицирует отдельную строку, в том числе дубликаты.
+-- При переносе на другую СУБД замените rowid на технический event_id/row_id.
+
+CREATE INDEX IF NOT EXISTS idx_antifraud_client_time
+    ON events (epk_id, event_time);
+CREATE INDEX IF NOT EXISTS idx_antifraud_client_subtype_time
+    ON events (epk_id, sub_type, event_time);
+
+DROP VIEW IF EXISTS antifraud_event_flags;
+CREATE VIEW antifraud_event_flags AS
+WITH normalized AS (
+    SELECT
+        e.rowid AS event_row_id,
+        e.epk_id,
+        e.event_time,
+        e.event_type,
+        e.sub_type,
+        CAST(NULLIF(TRIM(CAST(e.cards_dsl_model_risk_score AS TEXT)), &#x27;&#x27;) AS REAL) AS dsl_score,
+        CAST(REPLACE(NULLIF(TRIM(CAST(e.inrubles AS TEXT)), &#x27;&#x27;), &#x27;,&#x27;, &#x27;.&#x27;) AS REAL) AS amount_rub
+    FROM events AS e
+),
+flags AS (
+    SELECT
+        e.*,
+
+        -- G1: не менее двух ATM_CASH за последние 48 часов, включая текущее событие.
+        CASE WHEN (
+            SELECT COUNT(*)
+            FROM normalized AS a
+            WHERE a.epk_id = e.epk_id
+              AND a.sub_type = &#x27;ATM_CASH&#x27;
+              AND a.event_time &gt;= datetime(e.event_time, &#x27;-48 hours&#x27;)
+              AND a.event_time &lt;= e.event_time
+        ) &gt;= 2 THEN 1 ELSE 0 END AS g1_atm_cash_48h,
+
+        -- G2: EPOS_PURCHASE(A) -&gt; POS_PURCHASE(B) -&gt; текущая PAYMENT/WITHDRAW,
+        -- t(A) &lt; t(B) &lt; t(current), t(current)-t(A) &lt;= 24 часов.
+        CASE WHEN e.event_type IN (&#x27;PAYMENT&#x27;, &#x27;WITHDRAW&#x27;)
+                 AND e.dsl_score &gt;= 400
+                 AND EXISTS (
+                     SELECT 1
+                     FROM normalized AS b
+                     WHERE b.epk_id = e.epk_id
+                       AND b.sub_type = &#x27;POS_PURCHASE&#x27;
+                       AND b.event_time &lt; e.event_time
+                       AND b.event_time &gt;= datetime(e.event_time, &#x27;-24 hours&#x27;)
+                       AND EXISTS (
+                           SELECT 1
+                           FROM normalized AS a
+                           WHERE a.epk_id = e.epk_id
+                             AND a.sub_type = &#x27;EPOS_PURCHASE&#x27;
+                             AND a.event_time &lt; b.event_time
+                             AND a.event_time &gt;= datetime(e.event_time, &#x27;-24 hours&#x27;)
+                       )
+                 ) THEN 1 ELSE 0 END AS g2_epos_pos_payment,
+
+        -- G3: ePOS с высоким скором.
+        CASE WHEN e.sub_type = &#x27;EPOS_PURCHASE&#x27; AND e.dsl_score &gt;= 450
+             THEN 1 ELSE 0 END AS g3_epos_score,
+
+        -- G4: C2B-подписка со скором &gt;= 250.
+        CASE WHEN e.sub_type = &#x27;C2B_SUBSCRIBE&#x27; AND e.dsl_score &gt;= 250
+             THEN 1 ELSE 0 END AS g4_c2b_score,
+
+        -- G5: высокий скор и сумма в рублях.
+        CASE WHEN e.dsl_score &gt;= 800 AND e.amount_rub &gt;= 500
+             THEN 1 ELSE 0 END AS g5_score_amount,
+
+        -- G6: перевод юрлицу со скором &gt;= 450.
+        CASE WHEN e.sub_type = &#x27;RURPAYJURSB&#x27; AND e.dsl_score &gt;= 450
+             THEN 1 ELSE 0 END AS g6_rurpayjursb,
+
+        -- G7: VK_CHECK(A) -&gt; WITHOUT_OTP(B) -&gt; текущая PAYMENT/WITHDRAW.
+        CASE WHEN e.event_type IN (&#x27;PAYMENT&#x27;, &#x27;WITHDRAW&#x27;)
+                 AND e.dsl_score &gt;= 400
+                 AND EXISTS (
+                     SELECT 1
+                     FROM normalized AS b
+                     WHERE b.epk_id = e.epk_id
+                       AND b.sub_type = &#x27;WITHOUT_OTP&#x27;
+                       AND b.event_time &lt; e.event_time
+                       AND b.event_time &gt;= datetime(e.event_time, &#x27;-24 hours&#x27;)
+                       AND EXISTS (
+                           SELECT 1
+                           FROM normalized AS a
+                           WHERE a.epk_id = e.epk_id
+                             AND a.sub_type = &#x27;VK_CHECK&#x27;
+                             AND a.event_time &lt; b.event_time
+                             AND a.event_time &gt;= datetime(e.event_time, &#x27;-24 hours&#x27;)
+                       )
+                 ) THEN 1 ELSE 0 END AS g7_vk_without_otp,
+
+        -- G8: ACCOUNT(A) -&gt; текущая EPOS_PURCHASE за 24 часа, скор текущей &gt;= 300.
+        CASE WHEN e.sub_type = &#x27;EPOS_PURCHASE&#x27;
+                 AND e.dsl_score &gt;= 300
+                 AND EXISTS (
+                     SELECT 1
+                     FROM normalized AS a
+                     WHERE a.epk_id = e.epk_id
+                       AND a.sub_type = &#x27;ACCOUNT&#x27;
+                       AND a.event_time &lt; e.event_time
+                       AND a.event_time &gt;= datetime(e.event_time, &#x27;-24 hours&#x27;)
+                 ) THEN 1 ELSE 0 END AS g8_account_epos
+    FROM normalized AS e
+)
+SELECT
+    f.*,
+    CASE WHEN (
+        g1_atm_cash_48h = 1 OR g2_epos_pos_payment = 1 OR
+        g3_epos_score = 1 OR g4_c2b_score = 1 OR
+        g5_score_amount = 1 OR g6_rurpayjursb = 1 OR
+        g7_vk_without_otp = 1 OR g8_account_epos = 1
+    ) THEN 1 ELSE 0 END AS antifraud_flag,
+    RTRIM(
+        (CASE WHEN g1_atm_cash_48h = 1 THEN &#x27;G1_ATM_CASH_48H,&#x27; ELSE &#x27;&#x27; END) ||
+        (CASE WHEN g2_epos_pos_payment = 1 THEN &#x27;G2_EPOS_POS_PAYMENT,&#x27; ELSE &#x27;&#x27; END) ||
+        (CASE WHEN g3_epos_score = 1 THEN &#x27;G3_EPOS_SCORE,&#x27; ELSE &#x27;&#x27; END) ||
+        (CASE WHEN g4_c2b_score = 1 THEN &#x27;G4_C2B_SCORE,&#x27; ELSE &#x27;&#x27; END) ||
+        (CASE WHEN g5_score_amount = 1 THEN &#x27;G5_SCORE_AMOUNT,&#x27; ELSE &#x27;&#x27; END) ||
+        (CASE WHEN g6_rurpayjursb = 1 THEN &#x27;G6_RURPAYJURSB,&#x27; ELSE &#x27;&#x27; END) ||
+        (CASE WHEN g7_vk_without_otp = 1 THEN &#x27;G7_VK_WITHOUT_OTP,&#x27; ELSE &#x27;&#x27; END) ||
+        (CASE WHEN g8_account_epos = 1 THEN &#x27;G8_ACCOUNT_EPOS,&#x27; ELSE &#x27;&#x27; END),
+        &#x27;,&#x27;
+    ) AS triggered_groups
+FROM flags AS f;
+
+-- Просмотр сработок на УРОВНЕ СОБЫТИЙ (показать все события — убрать WHERE):
+SELECT event_row_id, epk_id, event_time, event_type, sub_type,
+       dsl_score, amount_rub, antifraud_flag, triggered_groups
+FROM antifraud_event_flags
+WHERE antifraud_flag = 1
+ORDER BY epk_id, event_time, event_row_id;
+
+-- Для оценки клиента как 0/1 используйте ОТДЕЛЬНЫЙ запрос:
+-- SELECT epk_id, MAX(antifraud_flag) AS client_flag
+-- FROM antifraud_event_flags GROUP BY epk_id;
+</pre><h3>Типовой запрос по сработкам</h3><pre class="codebox">SELECT event_row_id, epk_id, event_time, event_type, sub_type,
+       dsl_score, amount_rub, antifraud_flag, triggered_groups
+FROM antifraud_event_flags
+WHERE antifraud_flag = 1
+ORDER BY epk_id, event_time, event_row_id;</pre><h3>Признак на уровне клиента</h3><pre class="codebox">SELECT epk_id, MAX(antifraud_flag) AS client_flag
+FROM antifraud_event_flags
+GROUP BY epk_id;</pre><p>В текущей базе полное представление даёт <strong>1 185 сработавших событий</strong>. Это количество строк, не TP и не число уникальных клиентов. В условиях рабочего SQL отсутствует обращение к будущим событиям или метке мошенничества.</p></section>
+<section id="verify" class="section"><h2>9. Проверочный SQL для воспроизведения метрик</h2><div class="notice"><strong>Использовать только офлайн.</strong> Проверочный запрос намеренно обращается к <code>fraud_time</code> для задания временных границ и расчёта истинных меток; он <em>не является частью рабочего антифрод-правила</em>.</div><div class="file-links"><a href="antifraud_recall70_validation.sql">Скачать проверочный SQL</a></div><details><summary>Показать полный SQL воспроизведения исторического протокола</summary><pre class="codebox">-- SQLite. Воспроизведение исходной методики исследования (не промышленная выборка).
+-- Метка fraud_time задаёт границу наблюдения только при оценке качества.
+-- G1 из исследования считает ATM_CASH только внутри 48-часового окна выгрузки.
+-- G2/G7/G8 использовали предысторию в полном массиве (до 24 часов до текущего события),
+-- поэтому вычисляются от основного антифрод-представления, а НЕ от обрезанной таблицы.
+-- Иначе теряются граничные цепочки, и показатели не совпадают с исследованием.
+DROP VIEW IF EXISTS temp.antifraud_eval_event_flags;
+DROP TABLE IF EXISTS temp.eval_events;
+CREATE TEMP TABLE eval_events AS
+WITH bounds AS (
+    SELECT epk_id,
+           COALESCE(MIN(CASE WHEN NULLIF(TRIM(fraud_time), &#x27;&#x27;) IS NOT NULL
+                             THEN fraud_time END),
+                    MAX(event_time)) AS cutoff_time
+    FROM events GROUP BY epk_id
+)
+SELECT e.rowid AS original_event_row_id, e.*
+FROM events e JOIN bounds b ON e.epk_id=b.epk_id
+WHERE e.event_time BETWEEN datetime(b.cutoff_time, &#x27;-48 hours&#x27;) AND b.cutoff_time;
+CREATE INDEX idx_eval_client_subtype_time ON eval_events(epk_id,sub_type,event_time);
+
+CREATE TEMP VIEW antifraud_eval_event_flags AS
+WITH scoped AS (
+    SELECT f.event_row_id, f.epk_id, f.event_time, f.event_type, f.sub_type,
+           f.dsl_score, f.amount_rub,
+           CASE WHEN (
+               SELECT COUNT(*) FROM eval_events AS a
+               WHERE a.epk_id = f.epk_id AND a.sub_type = &#x27;ATM_CASH&#x27;
+                 AND a.event_time BETWEEN datetime(f.event_time, &#x27;-48 hours&#x27;) AND f.event_time
+           ) &gt;= 2 THEN 1 ELSE 0 END AS g1_atm_cash_48h,
+           f.g2_epos_pos_payment, f.g3_epos_score, f.g4_c2b_score,
+           f.g5_score_amount, f.g6_rurpayjursb, f.g7_vk_without_otp, f.g8_account_epos
+    FROM antifraud_event_flags AS f
+    JOIN eval_events AS e ON e.original_event_row_id = f.event_row_id
+)
+SELECT scoped.*,
+       CASE WHEN g1_atm_cash_48h=1 OR g2_epos_pos_payment=1 OR
+                 g3_epos_score=1 OR g4_c2b_score=1 OR
+                 g5_score_amount=1 OR g6_rurpayjursb=1 OR
+                 g7_vk_without_otp=1 OR g8_account_epos=1
+            THEN 1 ELSE 0 END AS antifraud_flag
+FROM scoped;
+
+-- РЕЗУЛЬТАТ проверки: одна строка на клиента в 48-часовом сопоставимом окне.
+WITH truth AS (
+ SELECT epk_id, MAX(CASE WHEN NULLIF(TRIM(fraud_time),&#x27;&#x27;) IS NOT NULL
+                         THEN 1 ELSE 0 END) AS actual_fraud,
+        MIN(CASE WHEN NULLIF(TRIM(fraud_time),&#x27;&#x27;) IS NOT NULL
+                 THEN fraud_time END) AS first_fraud_time
+ FROM events GROUP BY epk_id
+),
+pred AS (
+ SELECT t.epk_id,t.actual_fraud,t.first_fraud_time,
+        COALESCE(MAX(f.antifraud_flag),0) AS predicted_fraud,
+        MIN(CASE WHEN f.antifraud_flag=1 THEN f.event_time END) AS first_alert_time
+ FROM truth t LEFT JOIN antifraud_eval_event_flags f ON f.epk_id=t.epk_id
+ GROUP BY t.epk_id,t.actual_fraud,t.first_fraud_time
+),
+m AS (
+ SELECT SUM(CASE WHEN actual_fraud=1 AND predicted_fraud=1 THEN 1 ELSE 0 END) AS tp,
+        SUM(CASE WHEN actual_fraud=0 AND predicted_fraud=1 THEN 1 ELSE 0 END) AS fp,
+        SUM(CASE WHEN actual_fraud=1 AND predicted_fraud=0 THEN 1 ELSE 0 END) AS fn,
+        SUM(CASE WHEN actual_fraud=0 AND predicted_fraud=0 THEN 1 ELSE 0 END) AS tn,
+        SUM(CASE WHEN actual_fraud=1 AND first_alert_time&lt;=datetime(first_fraud_time,&#x27;-1 minute&#x27;)
+                  THEN 1 ELSE 0 END) AS early_tp
+ FROM pred
+)
+SELECT *,ROUND(100.0*tp/NULLIF(tp+fn,0),2) AS recall_pct,
+         ROUND(100.0*tp/NULLIF(tp+fp,0),2) AS precision_pct,
+         ROUND(100.0*early_tp/NULLIF(tp+fn,0),2) AS early_recall_pct
+FROM m;
+</pre></details><p>При повторном запуске проверочного SQL получены TP=70, FP=47, FN=30, TN=853 и 40 ранних обнаружений — цифры согласуются с итоговой таблицей исследования.</p></section>
+<section id="handoff"><h2>10. Состав комплекта и применение</h2><div class="file-links"><a href="antifraud_recall70_rule.sql">Рабочий SQL</a><a href="antifraud_recall70_validation.sql">SQL для метрик</a><a href="recall70_antifraud_rule.txt">Банковская формулировка</a><a href="recall70_complete_metrics.csv">Таблица метрик</a><a href="recall70_rule_contributions.csv">Вклад блоков</a><a href="antifraud_sql_README.md">Инструкция</a></div><p>Для запуска без Excel откройте вложенный файл <code>antifraud_events_sample.sqlite</code>: в нём уже есть таблица <code>events</code> и представление <code>antifraud_event_flags</code>. При загрузке собственной таблицы создайте представление командой из <code>antifraud_recall70_rule.sql</code>; предполагается формат даты <code>YYYY-MM-DD HH:MM:SS</code>.</p><p>Для переноса на PostgreSQL, Spark SQL или другую СУБД необходимо адаптировать функции работы с датами и технический идентификатор строки, сохранив точные условия цепочек.</p></section>
+<div class="footer">Источник содержания: пользовательское описание восьми блоков, оригинальное исследовательское правило, SQL и результаты анализа обезличенной выборки от 21.09.2026. Интерпретации сценариев — гипотезы о риске; код не доказывает причинно-следственную связь или факт мошенничества.</div></div></main></div></body></html>
