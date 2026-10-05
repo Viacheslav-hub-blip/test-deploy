@@ -1,0 +1,2022 @@
+# ============================================================
+# 0. ИМПОРТЫ
+# ============================================================
+
+import math
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+import polars as pl
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+
+
+# ============================================================
+# 1. НАСТРОЙКИ
+# ============================================================
+
+RANDOM_STATE = 42
+rng = np.random.default_rng(RANDOM_STATE)
+
+# Для теста создадим 15 000 клиентов.
+N_CLIENTS = 15_000
+
+# Момент, в который мы хотим принять решение:
+#
+# "Срабатывать сейчас или нет?"
+#
+# В реальных данных у каждого клиента reference_time
+# может быть своим.
+REFERENCE_TIME = datetime(
+    2026, 10, 1, 12, 0, 0
+)
+
+
+# ============================================================
+# 2. СОЗДАЁМ ТЕСТОВЫЕ ДАННЫЕ
+#
+# ЭТОТ БЛОК НУЖЕН ТОЛЬКО ДЛЯ ДЕМОНСТРАЦИИ.
+#
+# Когда будешь работать со своими данными,
+# этот блок просто удаляется.
+# ============================================================
+
+events_rows = []
+existing_rows = []
+
+
+for epk_id in range(N_CLIENTS):
+
+    # --------------------------------------------------------
+    # ГОТОВЫЕ ПРИЗНАКИ
+    #
+    # Представим, что эти признаки уже рассчитали коллеги.
+    # --------------------------------------------------------
+
+    device_change_24h = rng.binomial(
+        1,
+        0.08,
+    )
+
+    transfer_count_1h = rng.poisson(
+        0.7
+    )
+
+    client_age_days = rng.integers(
+        10,
+        3000,
+    )
+
+    risk_score = rng.beta(
+        2,
+        8,
+    )
+
+
+    # --------------------------------------------------------
+    # СОБЫТИЯ
+    #
+    # Эти значения специально НЕ кладём
+    # в готовые признаки.
+    #
+    # Потом восстановим их из истории событий.
+    # --------------------------------------------------------
+
+    login_count_30m = rng.poisson(
+        1.5
+    )
+
+    old_login_count = rng.poisson(
+        2.0
+    )
+
+    epos_count_1h = rng.poisson(
+        0.8
+    )
+
+    pos_count_1h = rng.poisson(
+        0.7
+    )
+
+
+    # --------------------------------------------------------
+    # LOGIN за последние 30 минут
+    # --------------------------------------------------------
+
+    for _ in range(login_count_30m):
+
+        minutes_ago = rng.integers(
+            1,
+            31,
+        )
+
+        events_rows.append({
+            "epk_id": epk_id,
+
+            "event_time":
+                REFERENCE_TIME
+                - timedelta(
+                    minutes=int(minutes_ago)
+                ),
+
+            "event_type": "LOGIN",
+
+            "amount": 0.0,
+        })
+
+
+    # --------------------------------------------------------
+    # Старые LOGIN:
+    # от 30 минут до суток назад
+    # --------------------------------------------------------
+
+    for _ in range(old_login_count):
+
+        minutes_ago = rng.integers(
+            31,
+            1441,
+        )
+
+        events_rows.append({
+            "epk_id": epk_id,
+
+            "event_time":
+                REFERENCE_TIME
+                - timedelta(
+                    minutes=int(minutes_ago)
+                ),
+
+            "event_type": "LOGIN",
+
+            "amount": 0.0,
+        })
+
+
+    # --------------------------------------------------------
+    # EPOS
+    # --------------------------------------------------------
+
+    for _ in range(epos_count_1h):
+
+        minutes_ago = rng.integers(
+            1,
+            61,
+        )
+
+        amount = float(
+            rng.gamma(
+                1.5,
+                3000,
+            )
+        )
+
+        events_rows.append({
+            "epk_id": epk_id,
+
+            "event_time":
+                REFERENCE_TIME
+                - timedelta(
+                    minutes=int(minutes_ago)
+                ),
+
+            "event_type": "EPOS",
+
+            "amount": amount,
+        })
+
+
+    # --------------------------------------------------------
+    # POS
+    # --------------------------------------------------------
+
+    for _ in range(pos_count_1h):
+
+        minutes_ago = rng.integers(
+            1,
+            61,
+        )
+
+        amount = float(
+            rng.gamma(
+                1.5,
+                5000,
+            )
+        )
+
+        events_rows.append({
+            "epk_id": epk_id,
+
+            "event_time":
+                REFERENCE_TIME
+                - timedelta(
+                    minutes=int(minutes_ago)
+                ),
+
+            "event_type": "POS",
+
+            "amount": amount,
+        })
+
+
+    # --------------------------------------------------------
+    # TRANSFER
+    # --------------------------------------------------------
+
+    transfer_amounts = []
+
+    for _ in range(transfer_count_1h):
+
+        minutes_ago = rng.integers(
+            1,
+            61,
+        )
+
+        amount = float(
+            rng.gamma(
+                1.8,
+                35_000,
+            )
+        )
+
+        transfer_amounts.append(
+            amount
+        )
+
+        events_rows.append({
+            "epk_id": epk_id,
+
+            "event_time":
+                REFERENCE_TIME
+                - timedelta(
+                    minutes=int(minutes_ago)
+                ),
+
+            "event_type": "TRANSFER",
+
+            "amount": amount,
+        })
+
+
+    amount_sum_1h = sum(
+        transfer_amounts
+    )
+
+
+    # ========================================================
+    # СОЗДАЁМ ИСКУССТВЕННЫЙ FRAUD
+    #
+    # Это нужно только для демонстрации.
+    #
+    # Специально создадим скрытую закономерность:
+    #
+    # 1)
+    # смена устройства
+    # +
+    # >= 2 переводов
+    # +
+    # >= 4 входов за 30 минут
+    #
+    # ИЛИ
+    #
+    # 2)
+    # >= 5 входов
+    # +
+    # переводов более чем на 90 000
+    #
+    # ИЛИ
+    #
+    # 3)
+    # >= 3 EPOS
+    # +
+    # >= 4 входов
+    #
+    # Деревья потом должны попытаться это найти.
+    # ========================================================
+
+    fraud_pattern = (
+
+        (
+            device_change_24h >= 1
+            and transfer_count_1h >= 2
+            and login_count_30m >= 4
+        )
+
+        or
+
+        (
+            login_count_30m >= 5
+            and amount_sum_1h > 90_000
+        )
+
+        or
+
+        (
+            epos_count_1h >= 3
+            and login_count_30m >= 4
+        )
+    )
+
+
+    # Базовая вероятность fraud.
+    fraud_probability = 0.005
+
+
+    if fraud_pattern:
+        fraud_probability += 0.45
+
+
+    if risk_score > 0.5:
+        fraud_probability += 0.05
+
+
+    if transfer_count_1h >= 4:
+        fraud_probability += 0.03
+
+
+    fraud_probability = min(
+        fraud_probability,
+        0.85,
+    )
+
+
+    target = rng.binomial(
+        1,
+        fraud_probability,
+    )
+
+
+    # --------------------------------------------------------
+    # ГОТОВАЯ ТАБЛИЦА КОЛЛЕГ
+    # --------------------------------------------------------
+
+    existing_rows.append({
+
+        "epk_id": epk_id,
+
+        "reference_time":
+            REFERENCE_TIME,
+
+        "device_change_24h":
+            device_change_24h,
+
+        "transfer_count_1h":
+            transfer_count_1h,
+
+        "amount_sum_1h":
+            amount_sum_1h,
+
+        "client_age_days":
+            client_age_days,
+
+        "risk_score":
+            risk_score,
+
+        "target":
+            target,
+    })
+
+
+# ============================================================
+# 3. СОЗДАЁМ POLARS DATAFRAME
+# ============================================================
+
+events = pl.DataFrame(
+    events_rows
+)
+
+existing = pl.DataFrame(
+    existing_rows
+)
+
+
+print(
+    "Количество событий:",
+    events.height,
+)
+
+print(
+    "Количество клиентов:",
+    existing.height,
+)
+
+print(
+    "Fraud клиентов:",
+    existing
+    .filter(
+        pl.col("target") == 1
+    )
+    .height,
+)
+
+
+print("\nСобытия:")
+display(
+    events.head(10)
+)
+
+
+print("\nГотовые признаки:")
+display(
+    existing.head(10)
+)
+
+
+# ============================================================
+# 4. СЧИТАЕМ НОВЫЕ ПРИЗНАКИ ИЗ СОБЫТИЙ
+#
+# В реальной задаче это как раз то место,
+# где будут десятки миллионов строк.
+#
+# Но после этого этапа события нам для поиска
+# правил больше не нужны.
+# ============================================================
+
+events_with_time = (
+
+    events
+
+    .join(
+        existing.select([
+            "epk_id",
+            "reference_time",
+        ]),
+        on="epk_id",
+        how="left",
+    )
+
+    .with_columns(
+
+        (
+            pl.col("reference_time")
+            - pl.col("event_time")
+        )
+        .dt.total_minutes()
+        .alias("minutes_ago")
+
+    )
+)
+
+
+display(
+    events_with_time.head()
+)
+
+
+# ============================================================
+# 5. АГРЕГИРОВАННЫЕ ПРИЗНАКИ
+# ============================================================
+
+new_features = (
+
+    events_with_time
+
+    .group_by(
+        "epk_id"
+    )
+
+    .agg([
+
+        # ----------------------------------------------------
+        # Входы
+        # ----------------------------------------------------
+
+        (
+            (
+                (pl.col("event_type") == "LOGIN")
+                &
+                (pl.col("minutes_ago") <= 10)
+            )
+            .cast(pl.UInt16)
+            .sum()
+        )
+        .alias(
+            "login_count_10m"
+        ),
+
+
+        (
+            (
+                (pl.col("event_type") == "LOGIN")
+                &
+                (pl.col("minutes_ago") <= 30)
+            )
+            .cast(pl.UInt16)
+            .sum()
+        )
+        .alias(
+            "login_count_30m"
+        ),
+
+
+        (
+            (
+                (pl.col("event_type") == "LOGIN")
+                &
+                (pl.col("minutes_ago") <= 60)
+            )
+            .cast(pl.UInt16)
+            .sum()
+        )
+        .alias(
+            "login_count_1h"
+        ),
+
+
+        # ----------------------------------------------------
+        # EPOS
+        # ----------------------------------------------------
+
+        (
+            (
+                (pl.col("event_type") == "EPOS")
+                &
+                (pl.col("minutes_ago") <= 60)
+            )
+            .cast(pl.UInt16)
+            .sum()
+        )
+        .alias(
+            "epos_count_1h"
+        ),
+
+
+        # ----------------------------------------------------
+        # POS
+        # ----------------------------------------------------
+
+        (
+            (
+                (pl.col("event_type") == "POS")
+                &
+                (pl.col("minutes_ago") <= 60)
+            )
+            .cast(pl.UInt16)
+            .sum()
+        )
+        .alias(
+            "pos_count_1h"
+        ),
+
+
+        # ----------------------------------------------------
+        # Сколько разных типов событий было за час
+        # ----------------------------------------------------
+
+        (
+            pl.col("event_type")
+
+            .filter(
+                pl.col("minutes_ago")
+                <= 60
+            )
+
+            .n_unique()
+        )
+        .alias(
+            "unique_event_types_1h"
+        ),
+
+
+        # ----------------------------------------------------
+        # Сколько минут прошло
+        # с последнего входа
+        # ----------------------------------------------------
+
+        (
+            pl.col("minutes_ago")
+
+            .filter(
+                pl.col("event_type")
+                == "LOGIN"
+            )
+
+            .min()
+        )
+        .alias(
+            "minutes_since_login"
+        ),
+
+    ])
+)
+
+
+print(
+    "\nНовые признаки:"
+)
+
+display(
+    new_features.head(10)
+)
+
+
+# ============================================================
+# 6. ОБЪЕДИНЯЕМ
+#
+# СЛЕВА:
+# готовые ~100 признаков коллег
+#
+# СПРАВА:
+# новые признаки из событий
+# ============================================================
+
+features = (
+
+    existing
+
+    .join(
+        new_features,
+        on="epk_id",
+        how="left",
+    )
+
+    .fill_null(0)
+)
+
+
+print(
+    "\nИтоговая таблица:"
+)
+
+display(
+    features.head()
+)
+
+
+# ============================================================
+# 7. УКАЗЫВАЕМ, ОТКУДА КАЖДЫЙ ПРИЗНАК
+#
+# Это позволит потом понять:
+#
+# правило состоит:
+#
+# - только из готовых признаков
+# - только из новых
+# - смешанное
+# ============================================================
+
+EXISTING_FEATURES = [
+
+    "device_change_24h",
+
+    "transfer_count_1h",
+
+    "amount_sum_1h",
+
+    "client_age_days",
+
+    "risk_score",
+]
+
+
+NEW_FEATURES = [
+
+    "login_count_10m",
+
+    "login_count_30m",
+
+    "login_count_1h",
+
+    "epos_count_1h",
+
+    "pos_count_1h",
+
+    "unique_event_types_1h",
+
+    "minutes_since_login",
+]
+
+
+ALL_FEATURES = (
+    EXISTING_FEATURES
+    +
+    NEW_FEATURES
+)
+
+
+FEATURE_SOURCE = {
+
+    **{
+        feature: "готовый"
+        for feature
+        in EXISTING_FEATURES
+    },
+
+    **{
+        feature: "новый"
+        for feature
+        in NEW_FEATURES
+    },
+}
+
+
+# ============================================================
+# 8. ПЕРЕВОДИМ МАЛЕНЬКУЮ ТАБЛИЦУ В PANDAS
+#
+# ВАЖНО:
+#
+# Мы НЕ переводим 100 млн событий.
+#
+# Только уже готовую таблицу признаков:
+#
+# 1 клиент = 1 строка
+# ============================================================
+
+df = features.select(
+
+    [
+        "epk_id",
+        "target",
+    ]
+    +
+    ALL_FEATURES
+
+).to_pandas()
+
+
+print(
+    df.shape
+)
+
+
+# ============================================================
+# 9. ДЕЛИМ ДАННЫЕ
+#
+# Часть данных:
+# ищем правила
+#
+# Другая часть:
+# честно проверяем найденные правила
+#
+# В реальном антифроде лучше разделять ПО ВРЕМЕНИ.
+#
+# Например:
+#
+# январь-март -> поиск
+# апрель      -> проверка
+# ============================================================
+
+search_idx, check_idx = train_test_split(
+
+    np.arange(
+        len(df)
+    ),
+
+    test_size=0.30,
+
+    stratify=df["target"],
+
+    random_state=RANDOM_STATE,
+)
+
+
+search_df = (
+    df
+    .iloc[search_idx]
+    .reset_index(drop=True)
+)
+
+check_df = (
+    df
+    .iloc[check_idx]
+    .reset_index(drop=True)
+)
+
+
+print(
+    "Для поиска:",
+    len(search_df)
+)
+
+print(
+    "Для проверки:",
+    len(check_df)
+)
+
+
+# ============================================================
+# 10. УМЕНЬШАЕМ GOOD ТОЛЬКО НА ЭТАПЕ ПОИСКА
+#
+# Например:
+#
+# 3000 fraud
+# +
+# 30 000 good
+#
+# вместо:
+#
+# 3000 fraud
+# +
+# 2 000 000 good
+#
+# Это сильно ускоряет поиск.
+#
+# НО:
+#
+# финальную проверку делаем на настоящем распределении.
+# ============================================================
+
+fraud_search = (
+    search_df[
+        search_df["target"] == 1
+    ]
+)
+
+
+good_search = (
+    search_df[
+        search_df["target"] == 0
+    ]
+)
+
+
+N_GOOD_PER_FRAUD = 10
+
+
+good_sample_size = min(
+
+    len(good_search),
+
+    len(fraud_search)
+    * N_GOOD_PER_FRAUD,
+)
+
+
+good_search_sample = (
+
+    good_search
+
+    .sample(
+        n=good_sample_size,
+        random_state=RANDOM_STATE,
+    )
+)
+
+
+rule_search_df = pd.concat([
+
+    fraud_search,
+
+    good_search_sample,
+
+])
+
+
+rule_search_df = (
+
+    rule_search_df
+
+    .sample(
+        frac=1,
+        random_state=RANDOM_STATE,
+    )
+
+    .reset_index(
+        drop=True
+    )
+)
+
+
+print(
+    "\nПоиск правил:"
+)
+
+print(
+    "Fraud:",
+    (
+        rule_search_df["target"]
+        == 1
+    ).sum()
+)
+
+print(
+    "Good:",
+    (
+        rule_search_df["target"]
+        == 0
+    ).sum()
+)
+
+
+# ============================================================
+# 11. СТРОИМ МНОГО МАЛЕНЬКИХ ДЕРЕВЬЕВ
+#
+# max_depth = 3
+#
+# означает:
+#
+# правило будет максимум примерно из 3 условий.
+#
+# Например:
+#
+# login_count_30m >= 4
+# AND
+# device_change_24h >= 1
+# AND
+# transfer_count_1h >= 2
+#
+# Это очень удобно для SQL.
+# ============================================================
+
+model = RandomForestClassifier(
+
+    # Количество маленьких деревьев.
+    n_estimators=100,
+
+    # Максимум 3 условия в пути.
+    max_depth=3,
+
+    # Не строим правила
+    # по 1-2 клиентам.
+    min_samples_leaf=20,
+
+    # Балансируем Fraud / Good.
+    class_weight=
+        "balanced_subsample",
+
+    # На каждом разделении
+    # смотрим не обязательно
+    # все признаки.
+    max_features=0.8,
+
+    n_jobs=-1,
+
+    random_state=
+        RANDOM_STATE,
+)
+
+
+model.fit(
+
+    rule_search_df[
+        ALL_FEATURES
+    ],
+
+    rule_search_df[
+        "target"
+    ],
+)
+
+
+print(
+    "\nДеревья обучены"
+)
+
+
+# ============================================================
+# 12. ИЗВЛЕКАЕМ ПРАВИЛА ИЗ ДЕРЕВЬЕВ
+#
+# Дерево:
+#
+# login_count_30m > 3.5
+#       |
+# device_change_24h > 0.5
+#       |
+# transfer_count_1h > 1.5
+#
+# превращаем в:
+#
+# login_count_30m >= 4
+# AND
+# device_change_24h >= 1
+# AND
+# transfer_count_1h >= 2
+# ============================================================
+
+def extract_rules_from_tree(
+    estimator,
+    feature_names,
+):
+
+    tree = estimator.tree_
+
+    classes = (
+        estimator.classes_
+    )
+
+    rules = []
+
+
+    def walk(
+        node,
+        conditions,
+    ):
+
+        left = (
+            tree.children_left[
+                node
+            ]
+        )
+
+        right = (
+            tree.children_right[
+                node
+            ]
+        )
+
+
+        # ----------------------------------------------------
+        # Лист дерева
+        # ----------------------------------------------------
+
+        if left == right:
+
+            values = (
+                tree.value[
+                    node
+                ][0]
+            )
+
+            predicted_class = (
+
+                classes[
+
+                    int(
+                        np.argmax(
+                            values
+                        )
+                    )
+
+                ]
+
+            )
+
+
+            # Нас интересуют
+            # только fraud-листья.
+            if predicted_class == 1:
+
+                rules.append(
+                    list(
+                        conditions
+                    )
+                )
+
+            return
+
+
+        feature_index = (
+            tree.feature[
+                node
+            ]
+        )
+
+        feature_name = (
+            feature_names[
+                feature_index
+            ]
+        )
+
+        threshold = float(
+
+            tree.threshold[
+                node
+            ]
+
+        )
+
+
+        # Левая ветка:
+        #
+        # feature <= threshold
+
+        walk(
+
+            left,
+
+            conditions
+            +
+            [
+                (
+                    feature_name,
+                    "<=",
+                    threshold,
+                )
+            ],
+        )
+
+
+        # Правая ветка:
+        #
+        # feature > threshold
+
+        walk(
+
+            right,
+
+            conditions
+            +
+            [
+                (
+                    feature_name,
+                    ">",
+                    threshold,
+                )
+            ],
+        )
+
+
+    walk(
+        0,
+        [],
+    )
+
+
+    return rules
+
+
+# ============================================================
+# 13. СОБИРАЕМ ПРАВИЛА СО ВСЕХ ДЕРЕВЬЕВ
+# ============================================================
+
+candidate_rules = []
+
+
+for estimator in model.estimators_:
+
+    tree_rules = (
+        extract_rules_from_tree(
+
+            estimator,
+
+            ALL_FEATURES,
+        )
+    )
+
+    candidate_rules.extend(
+        tree_rules
+    )
+
+
+print(
+    "Правил до удаления дублей:",
+    len(candidate_rules),
+)
+
+
+# ============================================================
+# 14. УДАЛЯЕМ ОДИНАКОВЫЕ ПРАВИЛА
+# ============================================================
+
+def rule_key(rule):
+
+    return tuple(
+
+        (
+            feature,
+            operation,
+            round(
+                threshold,
+                6,
+            ),
+        )
+
+        for (
+            feature,
+            operation,
+            threshold
+        )
+
+        in rule
+    )
+
+
+unique_rules = {}
+
+
+for rule in candidate_rules:
+
+    unique_rules[
+        rule_key(rule)
+    ] = rule
+
+
+candidate_rules = list(
+    unique_rules.values()
+)
+
+
+print(
+    "Уникальных правил:",
+    len(candidate_rules),
+)
+
+
+# ============================================================
+# 15. ФУНКЦИЯ:
+# ПРИМЕНИТЬ ПРАВИЛО К ТАБЛИЦЕ
+#
+# Это уже НЕ Python-цикл по клиентам.
+#
+# Все строки проверяются сразу.
+# ============================================================
+
+def apply_rule(
+    dataframe,
+    rule,
+):
+
+    mask = np.ones(
+
+        len(dataframe),
+
+        dtype=bool,
+    )
+
+
+    for (
+        feature,
+        operation,
+        threshold
+    ) in rule:
+
+        values = (
+            dataframe[
+                feature
+            ]
+            .to_numpy()
+        )
+
+
+        if operation == "<=":
+
+            mask &= (
+                values
+                <= threshold
+            )
+
+        else:
+
+            mask &= (
+                values
+                > threshold
+            )
+
+
+    return mask
+
+
+# ============================================================
+# 16. ПРЕДСТАВИМ,
+# ЧТО У НАС УЖЕ ЕСТЬ БОЕВОЕ ПРАВИЛО
+#
+# Например:
+#
+# device_change_24h >= 1
+# AND
+# transfer_count_1h >= 3
+#
+# Оно нужно, чтобы понять:
+#
+# новый кандидат ловит НОВЫЙ fraud
+#
+# или просто повторяет существующие правила.
+# ============================================================
+
+existing_rule_mask = (
+
+    (
+        check_df[
+            "device_change_24h"
+        ]
+        >= 1
+    )
+
+    &
+
+    (
+        check_df[
+            "transfer_count_1h"
+        ]
+        >= 3
+    )
+
+).to_numpy()
+
+
+# ============================================================
+# 17. ОЦЕНКА ОДНОГО ПРАВИЛА
+# ============================================================
+
+def evaluate_rule(
+    dataframe,
+    rule,
+    existing_rules_mask=None,
+):
+
+    rule_mask = apply_rule(
+        dataframe,
+        rule,
+    )
+
+
+    target = (
+        dataframe[
+            "target"
+        ]
+        .to_numpy()
+        .astype(bool)
+    )
+
+
+    fraud_mask = target
+
+    good_mask = ~target
+
+
+    # --------------------------------------------------------
+    # Fraud, которых поймали
+    # --------------------------------------------------------
+
+    tp = int(
+        (
+            rule_mask
+            &
+            fraud_mask
+        )
+        .sum()
+    )
+
+
+    # --------------------------------------------------------
+    # Нормальные клиенты,
+    # которых задели
+    # --------------------------------------------------------
+
+    fp = int(
+        (
+            rule_mask
+            &
+            good_mask
+        )
+        .sum()
+    )
+
+
+    fraud_total = int(
+        fraud_mask.sum()
+    )
+
+    good_total = int(
+        good_mask.sum()
+    )
+
+
+    # --------------------------------------------------------
+    # Recall
+    #
+    # Какая доля всего fraud
+    # была поймана.
+    # --------------------------------------------------------
+
+    recall = (
+
+        tp / fraud_total
+
+        if fraud_total
+
+        else 0
+    )
+
+
+    # --------------------------------------------------------
+    # Precision
+    #
+    # Среди всех срабатываний
+    # какая доля fraud.
+    # --------------------------------------------------------
+
+    precision = (
+
+        tp / (tp + fp)
+
+        if (tp + fp)
+
+        else 0
+    )
+
+
+    # --------------------------------------------------------
+    # Как часто правило срабатывает
+    # на fraud.
+    # --------------------------------------------------------
+
+    fraud_trigger_rate = (
+
+        tp / fraud_total
+
+        if fraud_total
+
+        else 0
+    )
+
+
+    # --------------------------------------------------------
+    # Как часто правило срабатывает
+    # на good.
+    # --------------------------------------------------------
+
+    good_trigger_rate = (
+
+        fp / good_total
+
+        if good_total
+
+        else 0
+    )
+
+
+    # --------------------------------------------------------
+    # Lift
+    #
+    # Во сколько раз правило
+    # чаще срабатывает на Fraud,
+    # чем на Good.
+    # --------------------------------------------------------
+
+    lift = (
+
+        fraud_trigger_rate
+        /
+        good_trigger_rate
+
+        if good_trigger_rate > 0
+
+        else float("inf")
+    )
+
+
+    trigger_count = int(
+        rule_mask.sum()
+    )
+
+
+    trigger_rate = (
+
+        trigger_count
+        /
+        len(dataframe)
+
+    )
+
+
+    # --------------------------------------------------------
+    # НОВЫЙ FRAUD
+    #
+    # Убираем всё,
+    # что уже ловят текущие правила.
+    # --------------------------------------------------------
+
+    incremental_tp = None
+    incremental_fp = None
+
+
+    if existing_rules_mask is not None:
+
+        new_mask = (
+
+            rule_mask
+
+            &
+
+            ~existing_rules_mask
+        )
+
+
+        incremental_tp = int(
+
+            (
+                new_mask
+                &
+                fraud_mask
+            )
+            .sum()
+
+        )
+
+
+        incremental_fp = int(
+
+            (
+                new_mask
+                &
+                good_mask
+            )
+            .sum()
+
+        )
+
+
+    return {
+
+        "tp": tp,
+
+        "fp": fp,
+
+        "recall": recall,
+
+        "precision": precision,
+
+        "lift": lift,
+
+        "trigger_count":
+            trigger_count,
+
+        "trigger_rate":
+            trigger_rate,
+
+        "incremental_tp":
+            incremental_tp,
+
+        "incremental_fp":
+            incremental_fp,
+    }
+
+
+# ============================================================
+# 18. ПОНЯТНЫЙ ВИД УСЛОВИЙ
+#
+# У дерева могут быть пороги:
+#
+# login_count_30m > 3.5
+#
+# Для целочисленного признака это означает:
+#
+# login_count_30m >= 4
+# ============================================================
+
+INTEGER_FEATURES = {
+
+    "device_change_24h",
+
+    "transfer_count_1h",
+
+    "client_age_days",
+
+    "login_count_10m",
+
+    "login_count_30m",
+
+    "login_count_1h",
+
+    "epos_count_1h",
+
+    "pos_count_1h",
+
+    "unique_event_types_1h",
+
+    "minutes_since_login",
+}
+
+
+def format_condition(
+    feature,
+    operation,
+    threshold,
+):
+
+    # --------------------------------------------------------
+    # Целочисленные признаки
+    # --------------------------------------------------------
+
+    if feature in INTEGER_FEATURES:
+
+        if operation == "<=":
+
+            value = math.floor(
+                threshold
+            )
+
+            return (
+                f"{feature} <= {value}"
+            )
+
+        else:
+
+            value = (
+                math.floor(
+                    threshold
+                )
+                + 1
+            )
+
+            return (
+                f"{feature} >= {value}"
+            )
+
+
+    # --------------------------------------------------------
+    # Числовые непрерывные признаки
+    # --------------------------------------------------------
+
+    value = round(
+        threshold,
+        4,
+    )
+
+
+    if operation == "<=":
+
+        return (
+            f"{feature} <= {value}"
+        )
+
+    return (
+        f"{feature} > {value}"
+    )
+
+
+def rule_to_text(rule):
+
+    return " AND ".join(
+
+        format_condition(
+            feature,
+            operation,
+            threshold,
+        )
+
+        for (
+            feature,
+            operation,
+            threshold
+        )
+
+        in rule
+    )
+
+
+# ============================================================
+# 19. SQL
+# ============================================================
+
+def rule_to_sql(rule):
+
+    conditions = [
+
+        format_condition(
+            feature,
+            operation,
+            threshold,
+        )
+
+        for (
+            feature,
+            operation,
+            threshold
+        )
+
+        in rule
+    ]
+
+
+    sql = (
+
+        "CASE\n"
+        "    WHEN "
+
+        +
+
+        "\n     AND ".join(
+            conditions
+        )
+
+        +
+
+        "\n    THEN 1\n"
+        "    ELSE 0\n"
+        "END"
+    )
+
+
+    return sql
+
+
+# ============================================================
+# 20. ОЦЕНИВАЕМ ВСЕ КАНДИДАТЫ
+# ============================================================
+
+results = []
+
+
+for rule in candidate_rules:
+
+    metrics = evaluate_rule(
+
+        check_df,
+
+        rule,
+
+        existing_rule_mask,
+    )
+
+
+    used_features = [
+
+        feature
+
+        for (
+            feature,
+            _,
+            _
+        )
+
+        in rule
+    ]
+
+
+    sources = {
+
+        FEATURE_SOURCE[
+            feature
+        ]
+
+        for feature
+        in used_features
+    }
+
+
+    if sources == {
+        "готовый"
+    }:
+
+        source = (
+            "только готовые"
+        )
+
+
+    elif sources == {
+        "новый"
+    }:
+
+        source = (
+            "только новые"
+        )
+
+
+    else:
+
+        source = (
+            "смешанное"
+        )
+
+
+    results.append({
+
+        "rule":
+            rule_to_text(
+                rule
+            ),
+
+        "source":
+            source,
+
+        "conditions_count":
+            len(rule),
+
+        **metrics,
+
+        "sql":
+            rule_to_sql(
+                rule
+            ),
+
+        "_raw_rule":
+            rule,
+    })
+
+
+results_df = pd.DataFrame(
+    results
+)
+
+
+# ============================================================
+# 21. ФИЛЬТРУЕМ ЯВНО ПЛОХИЕ
+#
+# Порог здесь только демонстрационный.
+#
+# Например оставляем:
+#
+# хотя бы 3 пойманных fraud
+# lift >= 2
+# ============================================================
+
+good_rules = (
+
+    results_df[
+
+        (
+            results_df[
+                "tp"
+            ]
+            >= 3
+        )
+
+        &
+
+        (
+            results_df[
+                "lift"
+            ]
+            >= 2
+        )
+
+    ]
+
+    .copy()
+)
+
+
+# ============================================================
+# 22. СОРТИРУЕМ
+#
+# Сначала:
+# сколько НОВОГО fraud поймали
+#
+# Затем:
+# сколько НОВЫХ false positive создали
+# ============================================================
+
+good_rules = (
+
+    good_rules
+
+    .sort_values(
+
+        by=[
+            "incremental_tp",
+            "incremental_fp",
+            "precision",
+        ],
+
+        ascending=[
+            False,
+            True,
+            False,
+        ],
+    )
+)
+
+
+# ============================================================
+# 23. ПОКАЗЫВАЕМ РЕЗУЛЬТАТ
+# ============================================================
+
+columns_to_show = [
+
+    "rule",
+
+    "source",
+
+    "tp",
+
+    "fp",
+
+    "recall",
+
+    "precision",
+
+    "lift",
+
+    "incremental_tp",
+
+    "incremental_fp",
+]
+
+
+print(
+    "\nЛУЧШИЕ КАНДИДАТЫ:"
+)
+
+
+display(
+
+    good_rules[
+        columns_to_show
+    ]
+    .head(30)
+
+)
+
+
+# ============================================================
+# 24. ПЕЧАТАЕМ ТОП-10 КРАСИВО
+# ============================================================
+
+for i, row in (
+
+    good_rules
+    .head(10)
+    .iterrows()
+
+):
+
+    print(
+        "=" * 80
+    )
+
+    print(
+        "\nПРАВИЛО:"
+    )
+
+    print(
+        row["rule"]
+    )
+
+
+    print(
+        "\nИсточник:",
+        row["source"],
+    )
+
+
+    print(
+        "\nFraud поймано:",
+        row["tp"],
+    )
+
+
+    print(
+        "Good задели:",
+        row["fp"],
+    )
+
+
+    print(
+        "Recall:",
+        round(
+            row["recall"] * 100,
+            2,
+        ),
+        "%",
+    )
+
+
+    print(
+        "Precision:",
+        round(
+            row["precision"] * 100,
+            2,
+        ),
+        "%",
+    )
+
+
+    print(
+        "Lift:",
+        round(
+            row["lift"],
+            2,
+        ),
+    )
+
+
+    print(
+        "\nНового fraud:",
+        row[
+            "incremental_tp"
+        ],
+    )
+
+
+    print(
+        "Новых good:",
+        row[
+            "incremental_fp"
+        ],
+    )
+
+
+    print(
+        "\nSQL:"
+    )
+
+    print(
+        row["sql"]
+    )
+
+    print()
+
+
+# ============================================================
+# 25. СОХРАНЯЕМ
+# ============================================================
+
+good_rules.drop(
+    columns=[
+        "_raw_rule"
+    ]
+).to_csv(
+
+    "antifraud_rule_candidates.csv",
+
+    index=False,
+)
+
+
+print(
+    "\nСохранено:"
+    " antifraud_rule_candidates.csv"
+)
