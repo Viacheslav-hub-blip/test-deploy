@@ -1,0 +1,827 @@
+# ============================================================
+# 0. INSTALL
+# ============================================================
+
+# Выполни один раз в Jupyter:
+# %pip install -U polars prefixspan
+
+
+# ============================================================
+# 1. IMPORTS
+# ============================================================
+
+import polars as pl
+from prefixspan import PrefixSpan
+from IPython.display import display
+
+
+# ============================================================
+# 2. CONFIG
+# ============================================================
+
+# Можно указать:
+# PATH = "data.parquet"
+# PATH = "data/*.parquet"
+
+PATH = "data.parquet"
+
+# Названия колонок
+CLIENT_COL = "epk_id"
+TIME_COL = "event_time"
+TARGET_COL = "target"
+
+# Главная колонка с типом события.
+# Например:
+# EVENT_COL = "description"
+# EVENT_COL = "event_type"
+# EVENT_COL = "operation_type"
+
+EVENT_COL = "description"
+
+
+# Размер первой тестовой выборки.
+# Пока специально не берём все данные.
+N_FRAUD = 3000
+N_GOOD = 3000
+
+# Максимальное число последних событий клиента.
+# Это сильно уменьшает пространство поиска.
+MAX_EVENTS = 200
+
+# Сколько паттернов искать
+TOP_K = 200
+
+# Минимальная / максимальная длина цепочки
+MIN_PATTERN_LEN = 2
+MAX_PATTERN_LEN = 3
+
+# Фильтры итоговых результатов
+MIN_FRAUD_RATE = 0.01     # хотя бы 1% fraud-клиентов
+MIN_LIFT = 2.0            # минимум в 2 раза чаще у fraud
+
+
+# ============================================================
+# 3. READ DATA LAZILY
+# ============================================================
+
+lf = (
+    pl.scan_parquet(PATH)
+    .select([
+        CLIENT_COL,
+        TIME_COL,
+        TARGET_COL,
+        EVENT_COL,
+    ])
+)
+
+print("Schema:")
+print(lf.collect_schema())
+
+print("\nFirst rows:")
+display(lf.head(10).collect())
+
+
+# ============================================================
+# 4. BASIC DATASET INFORMATION
+# ============================================================
+
+stats = (
+    lf
+    .select([
+        pl.len().alias("rows"),
+        pl.col(CLIENT_COL).n_unique().alias("clients"),
+        pl.col(EVENT_COL).n_unique().alias("event_types"),
+        pl.col(TARGET_COL)
+        .fill_null(0)
+        .eq(1)
+        .sum()
+        .alias("fraud_rows"),
+    ])
+    .collect()
+)
+
+print("\nDataset stats:")
+display(stats)
+
+
+# ============================================================
+# 5. GET FRAUD CLIENT IDS
+# ============================================================
+
+fraud_ids = (
+    lf
+    .filter(
+        pl.col(TARGET_COL).fill_null(0) == 1
+    )
+    .select(CLIENT_COL)
+    .unique()
+    .collect()
+)
+
+print(
+    f"Total fraud clients: {fraud_ids.height:,}"
+)
+
+
+# ============================================================
+# 6. SAMPLE FRAUD CLIENTS
+# ============================================================
+
+fraud_sample_ids = fraud_ids.head(N_FRAUD)
+
+print(
+    f"Fraud clients in experiment: "
+    f"{fraud_sample_ids.height:,}"
+)
+
+
+# ============================================================
+# 7. GET GOOD CLIENT IDS
+#
+# Вместо group_by по всей таблице:
+#
+# 1. получаем уникальных клиентов
+# 2. удаляем клиентов, у которых был target=1
+#
+# Это обычно заметно дешевле.
+# ============================================================
+
+fraud_ids_lazy = fraud_ids.lazy()
+
+good_ids = (
+    lf
+    .select(CLIENT_COL)
+    .unique()
+    .join(
+        fraud_ids_lazy,
+        on=CLIENT_COL,
+        how="anti",
+    )
+    .head(N_GOOD)
+    .collect()
+)
+
+print(
+    f"Good clients in experiment: "
+    f"{good_ids.height:,}"
+)
+
+
+# ============================================================
+# 8. LOAD ONLY FRAUD SAMPLE EVENTS
+#
+# target=1 — сама мошенническая операция.
+# Мы её исключаем, потому что хотим искать события ДО fraud.
+# ============================================================
+
+fraud_events = (
+    lf
+    .join(
+        fraud_sample_ids.lazy(),
+        on=CLIENT_COL,
+        how="semi",
+    )
+    .filter(
+        pl.col(TARGET_COL).fill_null(0) != 1
+    )
+    .filter(
+        pl.col(EVENT_COL).is_not_null()
+    )
+    .sort([
+        CLIENT_COL,
+        TIME_COL,
+    ])
+    .collect()
+)
+
+print(
+    f"\nFraud history rows: "
+    f"{fraud_events.height:,}"
+)
+
+display(fraud_events.head(10))
+
+
+# ============================================================
+# 9. LOAD GOOD SAMPLE EVENTS
+# ============================================================
+
+good_events = (
+    lf
+    .join(
+        good_ids.lazy(),
+        on=CLIENT_COL,
+        how="semi",
+    )
+    .filter(
+        pl.col(EVENT_COL).is_not_null()
+    )
+    .sort([
+        CLIENT_COL,
+        TIME_COL,
+    ])
+    .collect()
+)
+
+print(
+    f"Good history rows: "
+    f"{good_events.height:,}"
+)
+
+display(good_events.head(10))
+
+
+# ============================================================
+# 10. EVENT TYPE STATISTICS
+# ============================================================
+
+fraud_event_stats = (
+    fraud_events
+    .group_by(EVENT_COL)
+    .len()
+    .sort(
+        "len",
+        descending=True,
+    )
+)
+
+good_event_stats = (
+    good_events
+    .group_by(EVENT_COL)
+    .len()
+    .sort(
+        "len",
+        descending=True,
+    )
+)
+
+print(
+    "\nUnique event types:",
+    pl.concat([
+        fraud_events.select(EVENT_COL),
+        good_events.select(EVENT_COL),
+    ])
+    .get_column(EVENT_COL)
+    .n_unique()
+)
+
+print("\nTop fraud events:")
+display(fraud_event_stats.head(30))
+
+print("\nTop good events:")
+display(good_event_stats.head(30))
+
+
+# ============================================================
+# 11. CREATE EVENT -> INTEGER MAPPING
+# ============================================================
+
+all_events = (
+    pl.concat([
+        fraud_events.select(EVENT_COL),
+        good_events.select(EVENT_COL),
+    ])
+    .unique()
+    .sort(EVENT_COL)
+)
+
+event_names = all_events.get_column(
+    EVENT_COL
+).to_list()
+
+event_to_id = {
+    event: i
+    for i, event in enumerate(event_names)
+}
+
+id_to_event = {
+    i: event
+    for event, i in event_to_id.items()
+}
+
+print(
+    f"\nEncoded event types: "
+    f"{len(event_to_id):,}"
+)
+
+
+# ============================================================
+# 12. ENCODE EVENTS
+# ============================================================
+
+fraud_events = (
+    fraud_events
+    .with_columns(
+        pl.col(EVENT_COL)
+        .replace_strict(event_to_id)
+        .cast(pl.Int32)
+        .alias("event_id")
+    )
+)
+
+good_events = (
+    good_events
+    .with_columns(
+        pl.col(EVENT_COL)
+        .replace_strict(event_to_id)
+        .cast(pl.Int32)
+        .alias("event_id")
+    )
+)
+
+
+# ============================================================
+# 13. GROUP EVENTS INTO CLIENT SEQUENCES
+#
+# Получим:
+#
+# client_1 -> [1, 5, 8, 2, 4]
+# client_2 -> [8, 8, 3, 1]
+# ...
+# ============================================================
+
+fraud_sequences_df = (
+    fraud_events
+    .group_by(
+        CLIENT_COL,
+        maintain_order=True,
+    )
+    .agg(
+        pl.col("event_id")
+        .alias("sequence")
+    )
+)
+
+good_sequences_df = (
+    good_events
+    .group_by(
+        CLIENT_COL,
+        maintain_order=True,
+    )
+    .agg(
+        pl.col("event_id")
+        .alias("sequence")
+    )
+)
+
+
+fraud_sequences = (
+    fraud_sequences_df
+    .get_column("sequence")
+    .to_list()
+)
+
+good_sequences = (
+    good_sequences_df
+    .get_column("sequence")
+    .to_list()
+)
+
+
+print(
+    "\nFraud sequences:",
+    len(fraud_sequences),
+)
+
+print(
+    "Good sequences:",
+    len(good_sequences),
+)
+
+
+# ============================================================
+# 14. KEEP ONLY LAST N EVENTS
+#
+# Fraud интересует прежде всего история непосредственно
+# перед мошенническим событием.
+#
+# Для good пока аналогично берём конец доступного окна.
+# ============================================================
+
+fraud_sequences = [
+    seq[-MAX_EVENTS:]
+    for seq in fraud_sequences
+    if len(seq) > 0
+]
+
+good_sequences = [
+    seq[-MAX_EVENTS:]
+    for seq in good_sequences
+    if len(seq) > 0
+]
+
+
+print(
+    "\nAverage fraud sequence length:",
+    round(
+        sum(map(len, fraud_sequences))
+        / len(fraud_sequences),
+        2,
+    )
+)
+
+print(
+    "Average good sequence length:",
+    round(
+        sum(map(len, good_sequences))
+        / len(good_sequences),
+        2,
+    )
+)
+
+
+# ============================================================
+# 15. SHOW A FEW REAL CLIENT SEQUENCES
+# ============================================================
+
+def decode_pattern(pattern):
+    return [
+        id_to_event[event_id]
+        for event_id in pattern
+    ]
+
+
+print("\nExample fraud sequences:\n")
+
+for seq in fraud_sequences[:5]:
+    print(
+        decode_pattern(
+            seq[-20:]
+        )
+    )
+    print()
+
+
+# ============================================================
+# 16. PREFIXSPAN
+# ============================================================
+
+print("=" * 80)
+print("RUNNING PREFIXSPAN")
+print("=" * 80)
+
+
+ps = PrefixSpan(
+    fraud_sequences
+)
+
+ps.minlen = MIN_PATTERN_LEN
+ps.maxlen = MAX_PATTERN_LEN
+
+
+# closed=True убирает часть избыточных цепочек.
+patterns = ps.topk(
+    TOP_K,
+    closed=True,
+)
+
+
+print(
+    f"\nPatterns found: "
+    f"{len(patterns)}"
+)
+
+
+# ============================================================
+# 17. SHOW RAW PREFIXSPAN RESULTS
+# ============================================================
+
+print("\nTop raw patterns:\n")
+
+for support, pattern in patterns[:30]:
+
+    decoded = decode_pattern(
+        pattern
+    )
+
+    print(
+        f"support={support:4d} | "
+        + " -> ".join(
+            map(str, decoded)
+        )
+    )
+
+
+# ============================================================
+# 18. SUBSEQUENCE CHECK
+#
+# ВАЖНО:
+#
+# PrefixSpan ищет подпоследовательность.
+#
+# A -> B означает:
+#
+# A произошло ДО B
+#
+# Между ними могут находиться другие события.
+# ============================================================
+
+def contains_pattern(
+    sequence,
+    pattern,
+):
+    """
+    Проверяет, является ли pattern
+    подпоследовательностью sequence.
+    """
+
+    if not pattern:
+        return True
+
+    pattern_pos = 0
+
+    for event in sequence:
+
+        if event == pattern[pattern_pos]:
+
+            pattern_pos += 1
+
+            if pattern_pos == len(pattern):
+                return True
+
+    return False
+
+
+# ============================================================
+# 19. PATTERN SUPPORT
+# ============================================================
+
+def pattern_support(
+    sequences,
+    pattern,
+):
+    """
+    Возвращает:
+
+    count:
+        сколько клиентов содержит цепочку
+
+    rate:
+        доля клиентов, содержащих цепочку
+    """
+
+    count = 0
+
+    for sequence in sequences:
+
+        if contains_pattern(
+            sequence,
+            pattern,
+        ):
+            count += 1
+
+    rate = (
+        count / len(sequences)
+        if sequences
+        else 0
+    )
+
+    return count, rate
+
+
+# ============================================================
+# 20. COMPARE FRAUD VS GOOD
+# ============================================================
+
+print("\nCalculating fraud / good enrichment...")
+
+
+results = []
+
+
+for prefixspan_support, pattern in patterns:
+
+    fraud_count, fraud_rate = (
+        pattern_support(
+            fraud_sequences,
+            pattern,
+        )
+    )
+
+    good_count, good_rate = (
+        pattern_support(
+            good_sequences,
+            pattern,
+        )
+    )
+
+    # небольшое сглаживание,
+    # чтобы не получать бесконечность
+    # при good_count == 0
+
+    fraud_smoothed = (
+        fraud_count + 0.5
+    ) / (
+        len(fraud_sequences) + 1
+    )
+
+    good_smoothed = (
+        good_count + 0.5
+    ) / (
+        len(good_sequences) + 1
+    )
+
+    lift = (
+        fraud_smoothed
+        / good_smoothed
+    )
+
+    results.append({
+        "pattern_ids": pattern,
+
+        "pattern": " -> ".join(
+            map(
+                str,
+                decode_pattern(pattern),
+            )
+        ),
+
+        "length": len(pattern),
+
+        "fraud_count": fraud_count,
+        "fraud_rate": fraud_rate,
+
+        "good_count": good_count,
+        "good_rate": good_rate,
+
+        "lift": lift,
+    })
+
+
+result_df = pl.DataFrame(
+    results
+)
+
+
+# ============================================================
+# 21. SORT BY LIFT
+# ============================================================
+
+result_by_lift = (
+    result_df
+    .sort(
+        [
+            "lift",
+            "fraud_rate",
+        ],
+        descending=[
+            True,
+            True,
+        ],
+    )
+)
+
+print("\nTOP PATTERNS BY LIFT:")
+
+display(
+    result_by_lift
+    .select([
+        "pattern",
+        "length",
+        "fraud_count",
+        "fraud_rate",
+        "good_count",
+        "good_rate",
+        "lift",
+    ])
+    .head(50)
+)
+
+
+# ============================================================
+# 22. FILTER INTERESTING PATTERNS
+# ============================================================
+
+interesting = (
+    result_df
+    .filter(
+        (pl.col("fraud_rate") >= MIN_FRAUD_RATE)
+        &
+        (pl.col("lift") >= MIN_LIFT)
+    )
+    .sort(
+        [
+            "lift",
+            "fraud_rate",
+        ],
+        descending=[
+            True,
+            True,
+        ],
+    )
+)
+
+
+print("\nINTERESTING PATTERNS:")
+
+display(
+    interesting
+    .select([
+        "pattern",
+        "length",
+        "fraud_count",
+        "fraud_rate",
+        "good_count",
+        "good_rate",
+        "lift",
+    ])
+    .head(100)
+)
+
+
+# ============================================================
+# 23. ADD PERCENT COLUMNS FOR CONVENIENCE
+# ============================================================
+
+pretty_results = (
+    interesting
+    .with_columns([
+        (
+            pl.col("fraud_rate") * 100
+        )
+        .round(2)
+        .alias("fraud_percent"),
+
+        (
+            pl.col("good_rate") * 100
+        )
+        .round(2)
+        .alias("good_percent"),
+
+        pl.col("lift")
+        .round(2),
+    ])
+    .select([
+        "pattern",
+        "length",
+        "fraud_count",
+        "fraud_percent",
+        "good_count",
+        "good_percent",
+        "lift",
+    ])
+)
+
+
+display(
+    pretty_results.head(100)
+)
+
+
+# ============================================================
+# 24. SAVE RESULTS
+# ============================================================
+
+pretty_results.write_csv(
+    "sequence_patterns.csv"
+)
+
+result_df.write_parquet(
+    "sequence_patterns_full.parquet"
+)
+
+print(
+    "\nSaved:"
+    "\n- sequence_patterns.csv"
+    "\n- sequence_patterns_full.parquet"
+)
+
+
+# ============================================================
+# 25. OPTIONAL:
+# SHOW BEST PATTERNS IN HUMAN-READABLE FORM
+# ============================================================
+
+print("\n" + "=" * 80)
+print("BEST PATTERNS")
+print("=" * 80)
+
+
+for row in (
+    interesting
+    .head(30)
+    .iter_rows(named=True)
+):
+
+    print()
+
+    print(
+        row["pattern"]
+    )
+
+    print(
+        f"Fraud: "
+        f"{row['fraud_count']} "
+        f"({row['fraud_rate'] * 100:.2f}%)"
+    )
+
+    print(
+        f"Good:  "
+        f"{row['good_count']} "
+        f"({row['good_rate'] * 100:.2f}%)"
+    )
+
+    print(
+        f"Lift:  "
+        f"{row['lift']:.2f}x"
+    )
