@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Антифрод-правило 2 — Отчёт по оценке (68 ветвей)</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f5f7fa;
+    color: #2c3e50;
+    line-height: 1.6;
+}
+.container { max-width: 1280px; margin: 0 auto; padding: 20px; }
+
+h1 {
+    color: #1a5276;
+    font-size: 26px;
+    margin-bottom: 8px;
+    border-bottom: 3px solid #2980b9;
+    padding-bottom: 12px;
+}
+h2 {
+    color: #1a5276;
+    font-size: 20px;
+    margin: 30px 0 15px;
+    padding: 10px 15px;
+    background: #ebf5fb;
+    border-left: 4px solid #2980b9;
+    border-radius: 4px;
+}
+h3 {
+    color: #2c3e50;
+    font-size: 16px;
+    margin: 18px 0 10px;
+}
+.subtitle {
+    color: #5d6d7e;
+    font-size: 14px;
+    margin-bottom: 20px;
+}
+.section {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 15px 0;
+    border: 1px solid #d5dbdb;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 13px;
+}
+th {
+    background: #2980b9;
+    color: #ffffff;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid #1f618d;
+    white-space: nowrap;
+}
+td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #e0e0e0;
+    color: #2c3e50;
+}
+tr:nth-child(even) { background: #f8f9fa; }
+tr:hover { background: #ebf5fb; }
+
+pre {
+    background: #f8f9fa;
+    color: #000000;
+    padding: 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.65;
+    max-height: 700px;
+    border: 1px solid #d5dbdb;
+    font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+}
+
+.metric-card {
+    display: inline-block;
+    background: #ffffff;
+    border: 1px solid #d5dbdb;
+    border-radius: 8px;
+    padding: 12px 18px;
+    margin: 4px;
+    min-width: 120px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.metric-value { font-size: 24px; font-weight: 700; color: #2980b9; }
+.metric-label { font-size: 11px; color: #7f8c8d; margin-top: 4px; }
+
+.excel-link {
+    display: inline-block;
+    padding: 5px 14px;
+    background: #2980b9;
+    color: #fff !important;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 6px;
+}
+.excel-link:hover { background: #3498db; }
+
+.vetv-code {
+    font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
+    color: #0a2540;
+    font-weight: 700;
+}
+.cond-text {
+    font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
+    font-size: 12.5px;
+    color: #000000;
+    line-height: 1.55;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+.split-header { background: #d6eaf8; color: #1a5276; text-align: center; font-weight: 700; }
+.split-sep { border-left: 2px solid #d5dbdb; }
+.tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+}
+.tag-deepened { background: #e8f6f3; color: #1abc9c; }
+.tag-cv_combo { background: #fef9e7; color: #f39c12; }
+.tag-cv_tree { background: #ebf5fb; color: #2980b9; }
+
+.footer {
+    text-align: center;
+    color: #95a5a6;
+    margin-top: 30px;
+    padding: 20px;
+    border-top: 1px solid #e0e0e0;
+    font-size: 12px;
+}
+
+.scroll-table { overflow-x: auto; }
+.scroll-table table { min-width: 100%; }
+
+.prec-high { color: #27ae60; font-weight: 600; }
+.prec-mid { color: #e67e22; font-weight: 600; }
+.prec-low { color: #e74c3c; font-weight: 600; }
+.prec-zero { color: #bdc3c7; }
+
+ul { margin: 8px 0 8px 20px; }
+li { margin: 4px 0; color: #2c3e50; }
+code { color: #000000; background: #ebf5fb; padding: 2px 6px; border-radius: 3px; font-size: 12.5px; font-weight: 600; font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace; }
+
+/* Added human-readable explanations of each rule branch */
+.branch-description { min-width: 450px; max-width: 650px; width: 32vw; white-space: normal; font-size: 12.5px; line-height: 1.6; vertical-align: top; color: #233746; }
+.branch-description code { font-size: 11px; font-weight: 500; padding: 1px 3px; background: #f2f5f8; overflow-wrap: anywhere; }
+.desc-header { min-width: 450px; white-space: normal; }
+@media print { .branch-description { min-width: 360px; } }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Антифрод-правило 2 — Отчёт по оценке</h1>
+<p class="subtitle"><strong>68 ветвей</strong>  |  <strong>122 признака</strong>  |  <strong>13 hist-признаков</strong>  |  Период данных: <strong>event_dt 20260601 — 20260701</strong></p>
+<h2>1. Метрики на выборках TRAIN, TEST, OSS</h2>
+<div class="section">
+<table>
+<tr>
+<th>Параметр</th>
+<th>TRAIN</th>
+<th>TEST</th>
+<th>OSS</th>
+</tr>
+<tr>
+<td>Период (event_dt)</td>
+<td>20260601 — 20260701</td>
+<td>20260601 — 20260701</td>
+<td>20260601 — 20260701</td>
+</tr>
+<tr><td>Всего строк</td><td>2 347 205</td><td>503 795</td><td>498 062</td></tr>
+<tr><td>target = 0 (легитимные)</td><td>2 324 008</td><td>498 804</td><td>493 144</td></tr>
+<tr><td>target = 1 (мошенничество)</td><td>23 197</td><td>4 991</td><td>4 918</td></tr>
+<tr><td>TP</td><td>2 946</td><td>560</td><td>563</td></tr>
+<tr><td>FP</td><td>2 927</td><td>695</td><td>691</td></tr>
+<tr><td>FN</td><td>20 251</td><td>4 431</td><td>4 355</td></tr>
+<tr><td>TN</td><td>2 321 081</td><td>498 109</td><td>492 453</td></tr>
+<tr><td>Срабатываний</td><td>5 873</td><td>1 255</td><td>1 254</td></tr>
+<tr><td>Точность, %</td><td>50.16%</td><td>44.62%</td><td>44.90%</td></tr>
+<tr><td>Полнота, %</td><td>12.70%</td><td>11.22%</td><td>11.45%</td></tr>
+<tr><td>Доля ложных срабатываний, %</td><td>0.1259%</td><td>0.1393%</td><td>0.1401%</td></tr>
+</table>
+</div>
+<h2>2. Полное правило (SQL CASE WHEN ... THEN 1 ELSE 0 END)</h2>
+<div class="section">
+<pre>
+-- =============================================================================
+-- ANTIFRAUD RULE v5: 68-branch OR rule
+-- Created by: rule_discovery_v3 pipeline
+-- Unique features: 122 (109 existing + 13 engineered)
+-- SQL dialect: PostgreSQL / Spark SQL
+-- =============================================================================
+--
+-- This rule identifies potentially fraudulent banking operations by combining
+-- 70 independent detection branches (OR logic). Each branch captures a
+-- distinct fraud pattern identified through decision tree analysis, cross-validation
+-- combinations, and greedy deepening.
+--
+-- Engineered features (hist_*) are derived from the event history table (hist_table)
+-- using event_id (ops) == event_id_src (hist) and user_id (ops) == user_id_src (hist).
+-- All aggregates exclude the decision event itself (is_src_event = false).
+-- NULL values are replaced with 0 via COALESCE.
+--
+-- Metrics (verified):
+--   Train: TP=2478, FP=2368, Precision=0.51135, Recall=0.11717
+--   Test:  TP=471, FP=574, Precision=0.45072, Recall=0.10361
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- CTE: Engineered features from history table (hist_table)
+-- All 28 engineered features with prefix hist_
+-- Connection: ops.event_id = hist.event_id_src, ops.user_id = hist.user_id_src
+-- Condition: is_src_event = false (exclude the decision event itself)
+-- -----------------------------------------------------------------------------
+
+WITH hist_features AS (
+    SELECT
+        event_id_src,
+        user_id_src,
+
+        COUNT(*)                                                               AS hist_n_events,  -- hist_n_events (USED IN RULE: 6 branches)
+        COUNT(*) FILTER (WHERE event_type = 'CHANGE_PHONE')                    AS hist_n_change_phone,  -- hist_n_change_phone (USED IN RULE: 1 branches)
+        COUNT(*) FILTER (WHERE event_type = 'FRAUD_CALL')                      AS hist_n_fraud_calls,  -- hist_n_fraud_calls
+        COUNT(*) FILTER (WHERE event_type = 'HIGHRISK_CALL')                   AS hist_n_highrisk_calls,  -- hist_n_highrisk_calls
+        COUNT(*) FILTER (WHERE event_type = 'UPDATE_USER')                     AS hist_n_update_user,  -- hist_n_update_user (USED IN RULE: 19 branches)
+        COUNT(*) FILTER (WHERE event_type = 'SBP_FRAUD_CHECK')                 AS hist_n_sbp_fraud_check,  -- hist_n_sbp_fraud_check
+        COUNT(*) FILTER (WHERE event_type = 'SIGNIN')                          AS hist_n_signin,  -- hist_n_signin
+        COUNT(*) FILTER (WHERE event_type = 'SIGNIN_WO_OTP')                   AS hist_n_signin_wo_otp,  -- hist_n_signin_wo_otp
+        COUNT(*) FILTER (WHERE event_type = 'SIGNIN_W_OTP')                    AS hist_n_signin_w_otp,  -- hist_n_signin_w_otp
+        COUNT(*) FILTER (WHERE event_type = 'PAYMENT')                         AS hist_n_payment,  -- hist_n_payment (USED IN RULE: 10 branches)
+        COUNT(*) FILTER (WHERE event_type = 'RURPAYMENT')                      AS hist_n_rurpayment,  -- hist_n_rurpayment
+        COUNT(*) FILTER (WHERE event_type = 'EPOS_PURCHASE')                   AS hist_n_epos_purchase,  -- hist_n_epos_purchase
+        COUNT(*) FILTER (WHERE event_type = 'INTERNAL_PAYMENT')                AS hist_n_internal_payment,  -- hist_n_internal_payment
+        COUNT(*) FILTER (WHERE event_type = 'CLOSE_ACCOUNT')                   AS hist_n_close_account,  -- hist_n_close_account
+        COUNT(*) FILTER (WHERE event_type = 'EXTERNAL_PAYMENT')                AS hist_n_external_payment,  -- hist_n_external_payment
+        COUNT(*) FILTER (WHERE event_type = 'DEPOSIT')                         AS hist_n_deposit,  -- hist_n_deposit
+        COUNT(*) FILTER (WHERE event_type = 'WITHDRAW')                        AS hist_n_withdraw,  -- hist_n_withdraw
+        COUNT(*) FILTER (WHERE event_type = 'CHECK')                           AS hist_n_check,  -- hist_n_check (USED IN RULE: 3 branches)
+        COUNT(*) FILTER (WHERE sub_channel = 'MOBILE')                         AS hist_n_mobile_events,  -- hist_n_mobile_events
+        COUNT(*) FILTER (WHERE sub_channel = 'ISSUER')                         AS hist_n_issuer_events,  -- hist_n_issuer_events (USED IN RULE: 3 branches)
+        COUNT(*) FILTER (WHERE event_type = 'OTHER')                           AS hist_n_other_events,  -- hist_n_other_events
+        AVG(CAST(transaction_amount AS FLOAT64))                               AS hist_mean_amount,  -- hist_mean_amount (USED IN RULE: 33 branches)
+        MAX(CAST(transaction_amount AS FLOAT64))                               AS hist_max_amount,  -- hist_max_amount (USED IN RULE: 14 branches)
+        SUM(CAST(transaction_amount AS FLOAT64))                               AS hist_sum_amount,  -- hist_sum_amount (USED IN RULE: 12 branches)
+        COUNT(DISTINCT DATE(event_dt))                                         AS hist_n_unique_dates,  -- hist_n_unique_dates (USED IN RULE: 6 branches)
+        COUNT(*) FILTER (WHERE event_channel = 'CALL_CENTER')                  AS hist_call_center_events,  -- hist_call_center_events (USED IN RULE: 7 branches)
+        COUNT(*) FILTER (WHERE event_channel = 'BRANCH')                       AS hist_branch_events,  -- hist_branch_events (USED IN RULE: 11 branches)
+        COUNT(*) FILTER (WHERE sub_type = 'MB_ON')                             AS hist_mb_on  -- hist_mb_on (USED IN RULE: 2 branches)
+
+    FROM hist_table
+    WHERE is_src_event = false
+    GROUP BY event_id_src, user_id_src
+),
+
+-- -----------------------------------------------------------------------------
+-- CTE: Main operations table joined with engineered features
+-- Existing features come from the operations table (ops_table)
+-- Engineered features come from hist_features CTE (LEFT JOIN, COALESCE to 0)
+-- -----------------------------------------------------------------------------
+
+ops_with_features AS (
+    SELECT
+        o.event_id,
+        o.user_id,
+        o.target,
+
+        o.CT_APPEAL_90d,
+        o.CT_CREDIT_REQS_350d,
+        o.CT_NEW_JURSB_61d,
+        o.CT_NEW_MP_350d,
+        o.CT_OLD_P2P_350d,
+        o.CT_OLD_P2P_90d,
+        o.CT_OPS_CARD_OPS_90d,
+        o.CT_OPS_UKO_350d,
+        o.DDIFF_EVENT_DT__MIN_EVENT_TIME_350D,
+        o.MEAN_AMT_RURPAYMENT_050_61d,
+        o.N_UNQ_DATES_350d,
+        o.N_UNQ_RCVRS_OLD_P2P_350d,
+        o.QTL_AMT_JURSB_025_31d,
+        o.QTL_AMT_JURSB_050_61d,
+        o.QTL_AMT_NOT_TRADE_075_31d,
+        o.QTL_AMT_NOT_TRADE_075_61d,
+        o.QTL_AMT_RURPAY_025_31d,
+        o.QTL_AMT_TRADE_050_61d,
+        o.QTL_AMT_TRADE_095_7d,
+        o.QTL_AMT_card_050_61d,
+        o.QTL_ELCOM_025_31d,
+        o.QTL_TRADE_mccs_075_61d,
+        o.SUM_AMT_RURPAYMENT_350d,
+        o.SUM_AMT_TRANSPORT_AVTO_61d,
+        o.SUM_INCOMING_OLD_P2P_31d,
+        o.SUM_INCOMING_PAYMENTS_RSA_350d,
+        o.SUM_OPS_UKO_350d,
+        o.age_person,
+        o.cards_count_tgbot,
+        o.cards_count_tgbot_3hr,
+        o.cards_count_tgbot_fraud_call,
+        o.cards_count_tgbot_fraud_call_2,
+        o.cards_count_tgbot_fraud_call_4,
+        o.cards_count_tgbot_fraud_call_4_3hr,
+        o.cards_count_tgbot_fraud_call_5,
+        o.cards_count_tgbot_victims_check,
+        o.cards_count_tgbot_victims_check_3hr,
+        o.cards_count_tgbot_victims_crm_alert_2_3hr,
+        o.cards_count_tgbot_victims_crm_alert_3,
+        o.cards_count_tgbot_victims_crm_boss_3hr,
+        o.cards_count_vkcall,
+        o.cards_count_vkcall_match,
+        o.cards_count_vkcall_match_other_out,
+        o.cards_ct_elcomm_cvv2_data,
+        o.cards_sum_to_rcvrs_1day,
+        o.ct_bfd_detects,
+        o.ct_call_events,
+        o.ct_calls_bad_phone_to_client_events,
+        o.ct_enter_pan_sbol_reg,
+        o.ct_ops_cards_31d,
+        o.ct_ops_telefon_elcom_90d,
+        o.ct_ops_transfer_elcom_90d,
+        o.ct_pwd_change,
+        o.ct_sbol_confirm,
+        o.ct_sbol_null_90d,
+        o.ct_signin,
+        o.ct_signin_w_pan,
+        o.ct_signin_wo_otp,
+        o.ct_sms_confirm,
+        o.ct_tgbot_7d,
+        o.ct_unq_dates_350d,
+        o.ct_unq_ips,
+        o.ct_unq_osids,
+        o.ct_vk_check,
+        o.ct_vsp_identifications,
+        o.has_rdp,
+        o.lost_profit_early_closed_prom_1d,
+        o.max_amt_elcom_7d,
+        o.max_max_balance_31d,
+        o.max_max_balance_7d,
+        o.max_max_balance_90d,
+        o.max_rurpayment_350d,
+        o.max_sum_last_balance_90d,
+        o.max_transaction_amount_hist_1hour,
+        o.max_true_depo_term_prom_1d,
+        o.mean_N_UNQ_DAYS_OLD_P2P_350d,
+        o.mean_QTL_095_AMT_JURSB_350d,
+        o.mean_QTL_095_AMT_card_350d,
+        o.mean_QTL_095_TRADE_mccs_350d,
+        o.mean_pct_CT_INCOMING_NEW_P2P_CT_OUT_OPS_UKO_350d,
+        o.min_amt_elcom_90d,
+        o.min_depo_days_after_prolong_prom_1d,
+        o.min_true_depo_rate_prom_1d,
+        o.n_unq_inc_cards_rsa_31d,
+        o.pct_CT_CHANGE_PHONE_350d,
+        o.pct_CT_INCOMING_NEW_P2P_350d,
+        o.pct_SUM_AMT_JURSB_350d,
+        o.pct_SUM_AMT_RURPAYMENT_350d,
+        o.pct_ct_unq_new_inc_cards_rsa_350d,
+        o.pct_tgbot_7d_31d,
+        o.pct_tgbot_fraud_call_7d_31d,
+        o.rest,
+        o.risk_ratio_transaction_amount_hist_1day,
+        o.std_lognorm_QTL_025_AMT_RURPAY_350d,
+        o.std_lognorm_SUM_INCOMING_PAYMENTS_RSA_350d,
+        o.std_lognorm_sum_amt_cards_350d,
+        o.std_nolognorm_CT_OPS_UKO_350d,
+        o.std_nolognorm_N_UNQ_DATES_350d,
+        o.std_nolognorm_N_UNQ_SNDRS_OLD_P2P_350d,
+        o.std_pct_sum_elcom_350d,
+        o.sum_amt_700_vydacha_nalichnyh_350d,
+        o.sum_amt_cards_350d,
+        o.sum_amt_partial_deposit_withdr,
+        o.sum_cards_amt_61d,
+        o.sum_has_compromise_31d,
+        o.sum_has_total_last_balance_lower_10k_31d,
+        o.sum_ops_marketable_350d,
+        o.sum_to_new_rcvrs_1day,
+        o.sum_to_new_rcvrs_1hour,
+        COALESCE(hf.hist_branch_events, 0) AS hist_branch_events,
+        COALESCE(hf.hist_call_center_events, 0) AS hist_call_center_events,
+        COALESCE(hf.hist_max_amount, 0) AS hist_max_amount,
+        COALESCE(hf.hist_mb_on, 0) AS hist_mb_on,
+        COALESCE(hf.hist_mean_amount, 0) AS hist_mean_amount,
+        COALESCE(hf.hist_n_change_phone, 0) AS hist_n_change_phone,
+        COALESCE(hf.hist_n_check, 0) AS hist_n_check,
+        COALESCE(hf.hist_n_events, 0) AS hist_n_events,
+        COALESCE(hf.hist_n_issuer_events, 0) AS hist_n_issuer_events,
+        COALESCE(hf.hist_n_payment, 0) AS hist_n_payment,
+        COALESCE(hf.hist_n_unique_dates, 0) AS hist_n_unique_dates,
+        COALESCE(hf.hist_n_update_user, 0) AS hist_n_update_user,
+        COALESCE(hf.hist_sum_amount, 0) AS hist_sum_amount
+
+    FROM ops_table o
+    LEFT JOIN hist_features hf
+        ON o.event_id = hf.event_id_src
+       AND o.user_id = hf.user_id_src
+),
+
+-- -----------------------------------------------------------------------------
+-- CTE: Rule evaluation - 70 OR branches
+-- Each branch is a conjunction of conditions on features.
+-- The rule triggers (is_fraud_predicted = 1) if ANY branch matches.
+-- -----------------------------------------------------------------------------
+
+rule_result AS (
+    SELECT
+        event_id,
+        user_id,
+        target,
+        CASE WHEN
+        -- Branch 00 (source: deepened, n_conds: 6, train_tp: 5, train_fp: 0)
+        (age_person &gt; 20155.5 AND ct_vsp_identifications &gt; 0.5 AND hist_n_update_user &gt; 3.5 AND has_rdp &gt; 0.5 AND QTL_AMT_JURSB_050_61d &gt; 68652.4 AND ct_signin_wo_otp &lt;= 3.5) OR
+        -- Branch 01 (source: deepened, n_conds: 7, train_tp: 10, train_fp: 0)
+        (age_person &gt; 20155.5 AND ct_vsp_identifications &gt; 0.5 AND hist_n_update_user &gt; 3.5 AND has_rdp &gt; 0.5 AND QTL_AMT_JURSB_050_61d &gt; 68652.4 AND ct_signin_wo_otp &gt; 3.5 AND hist_n_events &lt;= 47.0) OR
+        -- Branch 02 (source: deepened, n_conds: 3, train_tp: 6, train_fp: 0)
+        (ct_sbol_confirm &gt; 0.0 AND min_depo_days_after_prolong_prom_1d &gt; 0.0 AND max_max_balance_7d &gt; 12031.75) OR
+        -- Branch 03 (source: deepened, n_conds: 3, train_tp: 7, train_fp: 0)
+        (cards_count_tgbot_fraud_call_4 &gt; 0.0 AND min_true_depo_rate_prom_1d &gt; 0.0 AND hist_mean_amount &gt; 11768836.383333333) OR
+        -- Branch 04 (source: deepened, n_conds: 3, train_tp: 5, train_fp: 0)
+        (ct_sbol_confirm &gt; 0.0 AND sum_has_compromise_31d &gt; 0.0 AND hist_mean_amount &gt; 2890000.0) OR
+        -- Branch 05 (source: deepened, n_conds: 3, train_tp: 6, train_fp: 0)
+        (ct_sbol_confirm &gt; 0.0 AND ct_pwd_change &gt; 0.0 AND hist_mean_amount &gt; 173219.06666666668) OR
+        -- Branch 06 (source: deepened, n_conds: 3, train_tp: 33, train_fp: 0)
+        (has_rdp &gt; 0.0 AND max_true_depo_term_prom_1d &gt; 0.0 AND ct_vk_check &gt; 0.0) OR
+        -- Branch 07 (source: deepened, n_conds: 4, train_tp: 35, train_fp: 0)
+        (lost_profit_early_closed_prom_1d &gt; 0.0 AND ct_signin_w_pan &gt; 0.0 AND ct_unq_ips &lt;= 2.0 AND age_person &gt; 18929.254192708773) OR
+        -- Branch 08 (source: deepened, n_conds: 3, train_tp: 5, train_fp: 0)
+        (cards_count_tgbot_victims_crm_boss_3hr &gt; 0.0 AND cards_count_tgbot_fraud_call_4_3hr &gt; 2.0 AND age_person &gt; 12264.517269746733) OR
+        -- Branch 09 (source: deepened, n_conds: 3, train_tp: 5, train_fp: 0)
+        (cards_count_tgbot_fraud_call_5 &gt; 0.0 AND min_depo_days_after_prolong_prom_1d &gt; 0.0 AND pct_tgbot_7d_31d &lt;= 0.0) OR
+        -- Branch 10 (source: deepened, n_conds: 12, train_tp: 15, train_fp: 0)
+        (age_person &gt; 20155.5 AND ct_vsp_identifications &gt; 0.5 AND hist_n_update_user &gt; 3.5 AND has_rdp &lt;= 0.5 AND pct_tgbot_7d_31d &gt; 0.917 AND hist_branch_events &gt; 0.5 AND age_person &lt;= 22597.0 AND ct_vk_check &gt; 0.0 AND std_nolognorm_N_UNQ_DATES_350d &lt;= 4.710888321622479 AND sum_to_new_rcvrs_1day &lt;= 0.0 AND rest &lt;= 4109451.2896761396 AND ct_signin &gt; 1.48410927383114) OR
+        -- Branch 11 (source: deepened, n_conds: 13, train_tp: 68, train_fp: 5)
+        (age_person &gt; 20155.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_transaction_amount_hist_1hour &gt; 15612.5 AND QTL_AMT_JURSB_050_61d &lt;= 86447.5 AND hist_call_center_events &lt;= 9.5 AND hist_call_center_events &gt; 1.0 AND CT_OLD_P2P_350d &lt;= 32.5 AND hist_n_issuer_events &lt;= 6.356455617501904 AND ct_unq_osids &lt;= 1.0 AND CT_OPS_UKO_350d &lt;= 594.274136279816 AND hist_branch_events &lt;= 0.0 AND std_lognorm_QTL_025_AMT_RURPAY_350d &gt; -0.6323478270139624) OR
+        -- Branch 12 (source: deepened, n_conds: 11, train_tp: 11, train_fp: 1)
+        (age_person &lt;= 20155.5 AND age_person &lt;= 20131.0 AND max_transaction_amount_hist_1hour &lt;= 5504.0 AND hist_call_center_events &gt; 2.5 AND hist_mb_on &gt; 0.5 AND sum_amt_700_vydacha_nalichnyh_350d &gt; 430800.0 AND ct_signin_w_pan &gt; 0.0 AND max_max_balance_7d &gt; 154953.609375 AND ct_calls_bad_phone_to_client_events &lt;= 9.895802963978227 AND ct_signin &gt; 9.745412480180391 AND SUM_AMT_RURPAYMENT_350d &lt;= 6681970.360688267) OR
+        -- Branch 13 (source: cv_combo, n_conds: 3, train_tp: 35, train_fp: 7)
+        (has_rdp &gt; 0.0 AND pct_tgbot_fraud_call_7d_31d &gt; 0.0 AND hist_n_events &gt; 0.0) OR
+        -- Branch 14 (source: cv_combo, n_conds: 3, train_tp: 103, train_fp: 29)
+        (hist_mean_amount &gt; 11200000.0 AND has_rdp &gt; 0.0 AND max_max_balance_7d &gt; -10.0) OR
+        -- Branch 15 (source: cv_combo, n_conds: 3, train_tp: 18, train_fp: 6)
+        (cards_count_tgbot_fraud_call &gt; 1.0 AND sum_amt_partial_deposit_withdr &gt; 26619211.50000002 AND hist_mean_amount &gt; 0.0) OR
+        -- Branch 16 (source: cv_combo, n_conds: 3, train_tp: 68, train_fp: 24)
+        (pct_tgbot_fraud_call_7d_31d &gt; 0.0 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055 AND max_max_balance_7d &gt; -10.0) OR
+
+        -- Branch 18 (source: cv_combo, n_conds: 2, train_tp: 107, train_fp: 40)
+        (has_rdp &gt; 0.0 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055) OR
+        -- Branch 19 (source: cv_combo, n_conds: 2, train_tp: 31, train_fp: 12)
+        (ct_tgbot_7d &gt; 5.0 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055) OR
+        -- Branch 20 (source: cv_combo, n_conds: 3, train_tp: 33, train_fp: 13)
+        (has_rdp &gt; 0.0 AND sum_to_new_rcvrs_1hour &gt; 15000.0 AND max_max_balance_90d &gt; 2616.914465332031) OR
+        -- Branch 21 (source: cv_tree, n_conds: 10, train_tp: 15, train_fp: 7)
+        (hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND pct_ct_unq_new_inc_cards_rsa_350d &lt;= 0.04499494470655918 AND max_max_balance_90d &gt; 9577.89013671875 AND hist_n_unique_dates &lt;= 1.5 AND min_amt_elcom_90d &lt;= 709.0 AND pct_SUM_AMT_JURSB_350d &gt; 1.907647430896759) OR
+        -- Branch 22 (source: cv_tree, n_conds: 10, train_tp: 305, train_fp: 145)
+        (hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND pct_ct_unq_new_inc_cards_rsa_350d &lt;= 0.04499494470655918 AND max_max_balance_90d &gt; 9577.89013671875 AND hist_n_unique_dates &lt;= 1.5 AND min_amt_elcom_90d &lt;= 709.0 AND pct_SUM_AMT_JURSB_350d &lt;= 1.907647430896759) OR
+        -- Branch 23 (source: cv_combo, n_conds: 2, train_tp: 25, train_fp: 12)
+        (ct_bfd_detects &gt; 1.0 AND has_rdp &gt; 0.0) OR
+        -- Branch 24 (source: cv_combo, n_conds: 3, train_tp: 95, train_fp: 47)
+        (cards_count_tgbot_fraud_call &gt; 5.0 AND hist_n_update_user &gt; 0.0 AND age_person &gt; 0.0) OR
+        -- Branch 25 (source: cv_combo, n_conds: 3, train_tp: 30, train_fp: 15)
+        (ct_enter_pan_sbol_reg &gt; 2.0 AND sum_to_new_rcvrs_1hour &gt; 15000.0 AND hist_n_check &lt;= 5.0) OR
+        -- Branch 26 (source: cv_combo, n_conds: 2, train_tp: 13, train_fp: 7)
+        (ct_vk_check &gt; 5.0 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055) OR
+        -- Branch 27 (source: cv_combo, n_conds: 3, train_tp: 30, train_fp: 17)
+        (max_max_balance_90d &gt; 310008.484375 AND cards_count_vkcall_match &gt; 5.0 AND age_person &gt; 19923.499999999996) OR
+        -- Branch 28 (source: cv_combo, n_conds: 2, train_tp: 32, train_fp: 19)
+        (rest &gt; 2185517.6000000015 AND cards_count_vkcall_match &gt; 5.0) OR
+        -- Branch 29 (source: cv_combo, n_conds: 3, train_tp: 87, train_fp: 52)
+        (hist_sum_amount &gt; 34946244.249999955 AND has_rdp &gt; 0.0 AND ct_signin &gt; 6.0) OR
+        -- Branch 30 (source: deepened, n_conds: 15, train_tp: 40, train_fp: 24)
+        (age_person &gt; 20155.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_transaction_amount_hist_1hour &lt;= 15612.5 AND sum_amt_partial_deposit_withdr &lt;= 2363000.0 AND hist_max_amount &gt; 14745.5 AND hist_call_center_events &gt; 4.5 AND cards_ct_elcomm_cvv2_data &lt;= -0.5 AND ct_sms_confirm &gt; 0.0 AND CT_OPS_UKO_350d &lt;= 1435.0 AND SUM_AMT_TRANSPORT_AVTO_61d &lt;= 20966.10431235192 AND hist_n_events &gt; 15.054875936809978 AND sum_has_total_last_balance_lower_10k_31d &gt; -1.5392514062758789 AND pct_CT_INCOMING_NEW_P2P_350d &lt;= 0.09832087157866787 AND DDIFF_EVENT_DT__MIN_EVENT_TIME_350D &lt;= 392.2749102687897) OR
+        -- Branch 31 (source: cv_combo, n_conds: 2, train_tp: 10, train_fp: 6)
+        (hist_mean_amount &gt; 1142254.0142857148 AND ct_vk_check &gt; 10.0) OR
+        -- Branch 32 (source: cv_combo, n_conds: 2, train_tp: 28, train_fp: 17)
+        (cards_count_vkcall_match &gt; 2.0 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055) OR
+        -- Branch 33 (source: deepened, n_conds: 13, train_tp: 411, train_fp: 251)
+        (age_person &gt; 20155.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_transaction_amount_hist_1hour &lt;= 15612.5 AND sum_amt_partial_deposit_withdr &gt; 2363000.0 AND CT_OPS_CARD_OPS_90d &lt;= 87.5 AND hist_call_center_events &lt;= 6.5 AND hist_max_amount &gt; 7520000.0 AND CT_OLD_P2P_350d &lt;= 30.0 AND cards_count_tgbot_3hr &lt;= 0.0 AND ct_signin_wo_otp &gt; 0.13764240686064744 AND mean_QTL_095_AMT_JURSB_350d &lt;= 19942224.90021721 AND SUM_AMT_TRANSPORT_AVTO_61d &lt;= 341629.7302152869) OR
+        -- Branch 34 (source: cv_combo, n_conds: 3, train_tp: 80, train_fp: 49)
+        (hist_sum_amount &gt; 16304477.0 AND pct_tgbot_fraud_call_7d_31d &gt; 0.0 AND risk_ratio_transaction_amount_hist_1day &lt;= -1.0) OR
+        -- Branch 35 (source: cv_combo, n_conds: 3, train_tp: 83, train_fp: 51)
+        (hist_mean_amount &gt; 3362679.5454545454 AND pct_tgbot_fraud_call_7d_31d &gt; 0.0 AND risk_ratio_transaction_amount_hist_1day &lt;= -1.0) OR
+        -- Branch 36 (source: cv_tree, n_conds: 9, train_tp: 14, train_fp: 9)
+        (hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND pct_ct_unq_new_inc_cards_rsa_350d &lt;= 0.04499494470655918 AND max_max_balance_90d &gt; 9577.89013671875 AND hist_n_unique_dates &lt;= 1.5 AND min_amt_elcom_90d &gt; 709.0) OR
+        -- Branch 37 (source: cv_tree, n_conds: 8, train_tp: 51, train_fp: 34)
+        (hist_mean_amount &lt;= 711562.65625 AND age_person &gt; 22016.5 AND hist_n_update_user &lt;= 1.5 AND hist_branch_events &lt;= 1.5 AND age_person &lt;= 23737.5 AND rest &gt; 302972.6875 AND hist_sum_amount &lt;= 208592.5 AND cards_count_tgbot_victims_crm_alert_2_3hr &gt; 0.5) OR
+        -- Branch 38 (source: cv_combo, n_conds: 2, train_tp: 36, train_fp: 24)
+        (ct_tgbot_7d &gt; 10.0 AND hist_branch_events &gt; 0.0) OR
+        -- Branch 39 (source: deepened, n_conds: 15, train_tp: 25, train_fp: 17)
+        (age_person &lt;= 20155.5 AND age_person &lt;= 20131.0 AND max_transaction_amount_hist_1hour &lt;= 5504.0 AND hist_call_center_events &gt; 2.5 AND hist_mb_on &gt; 0.5 AND sum_amt_700_vydacha_nalichnyh_350d &lt;= 430800.0 AND sum_amt_700_vydacha_nalichnyh_350d &lt;= 134050.0 AND std_lognorm_QTL_025_AMT_RURPAY_350d &lt;= 3.25 AND ct_signin_w_pan &gt; 0.0 AND ct_signin_wo_otp &gt; 8.0 AND pct_CT_CHANGE_PHONE_350d &lt;= 0.3792500003130199 AND CT_OPS_UKO_350d &lt;= 2289.2431585484082 AND hist_n_payment &lt;= 19.052825691511366 AND ct_signin &lt;= 55.68971222195441 AND cards_count_tgbot &lt;= 0.0) OR
+
+        -- Branch 41 (source: cv_tree, n_conds: 14, train_tp: 28, train_fp: 20)
+        (hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &lt;= 23703.5 AND hist_sum_amount &gt; 10083000.0 AND CT_OPS_UKO_350d &lt;= 1167.5 AND QTL_ELCOM_025_31d &lt;= 817.0 AND hist_mean_amount &gt; 2728195.75 AND CT_CREDIT_REQS_350d &lt;= 1.5 AND ct_sbol_null_90d &lt;= 4.5 AND max_max_balance_90d &lt;= 37595.42578125 AND mean_N_UNQ_DAYS_OLD_P2P_350d &lt;= 1.9375) OR
+        -- Branch 42 (source: cv_tree, n_conds: 12, train_tp: 68, train_fp: 49)
+        (hist_mean_amount &lt;= 711562.65625 AND age_person &gt; 22016.5 AND hist_n_update_user &lt;= 1.5 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23737.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND cards_count_vkcall &lt;= 0.5 AND hist_n_check &gt; 0.5 AND hist_n_change_phone &gt; 1.5 AND max_max_balance_31d &gt; 26588.8798828125 AND ct_call_events &gt; 3.5 AND QTL_AMT_NOT_TRADE_075_61d &gt; 9423.623046875) OR
+        -- Branch 43 (source: cv_combo, n_conds: 2, train_tp: 19, train_fp: 14)
+        (cards_count_tgbot_fraud_call &gt; 2.0 AND has_rdp &gt; 0.0) OR
+        -- Branch 44 (source: cv_combo, n_conds: 3, train_tp: 90, train_fp: 69)
+        (has_rdp &gt; 0.0 AND ct_tgbot_7d &gt; 1.0 AND hist_n_events &gt; 0.0) OR
+        -- Branch 45 (source: cv_combo, n_conds: 2, train_tp: 61, train_fp: 48)
+        (ct_enter_pan_sbol_reg &gt; 1.0 AND max_max_balance_7d &gt; 838398.0250000006) OR
+        -- Branch 46 (source: cv_combo, n_conds: 3, train_tp: 101, train_fp: 81)
+        (max_max_balance_7d &gt; 240001.59453124995 AND has_rdp &gt; 0.0 AND mean_QTL_095_AMT_card_350d &lt;= 35182.68789062501) OR
+        -- Branch 47 (source: cv_tree, n_conds: 15, train_tp: 765, train_fp: 636)
+        (hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23703.5 AND hist_sum_amount &gt; 4647384.5 AND ct_ops_transfer_elcom_90d &lt;= 5.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND ct_unq_dates_350d &lt;= 86.5 AND MEAN_AMT_RURPAYMENT_050_61d &lt;= 10449883.5 AND hist_max_amount &gt; 5232300.0 AND QTL_AMT_card_050_61d &lt;= 19809.53515625 AND sum_has_total_last_balance_lower_10k_31d &lt;= 15.0 AND SUM_INCOMING_OLD_P2P_31d &lt;= 642451.125) OR
+        -- Branch 48 (source: cv_tree, n_conds: 12, train_tp: 784, train_fp: 676)
+        (hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23703.5 AND hist_sum_amount &gt; 4647384.5 AND cards_count_tgbot_victims_check_3hr &lt;= 0.5 AND ct_ops_transfer_elcom_90d &lt;= 4.5 AND ct_unq_dates_350d &lt;= 86.5 AND hist_max_amount &gt; 5232300.0 AND max_rurpayment_350d &lt;= 641175.40625) OR
+        -- Branch 49 (source: cv_combo, n_conds: 3, train_tp: 76, train_fp: 66)
+        (has_rdp &gt; 0.0 AND max_max_balance_31d &gt; 387330.46249999956 AND hist_n_issuer_events &lt;= 5.0) OR
+        -- Branch 50 (source: cv_combo, n_conds: 2, train_tp: 11, train_fp: 10)
+        (age_person &gt; 27781.7 AND cards_count_tgbot_victims_check &gt; 5.0) OR
+        -- Branch 51 (source: deepened, n_conds: 12, train_tp: 159, train_fp: 146)
+        (age_person &gt; 20155.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_transaction_amount_hist_1hour &gt; 15612.5 AND QTL_AMT_JURSB_050_61d &lt;= 86447.5 AND hist_call_center_events &lt;= 9.5 AND hist_call_center_events &lt;= 1.0 AND sum_ops_marketable_350d &lt;= 207615.3 AND hist_sum_amount &gt; 23212608.5 AND CT_OLD_P2P_90d &lt;= 57.63366701210147 AND mean_QTL_095_AMT_JURSB_350d &lt;= 2579060.8591239443 AND QTL_ELCOM_025_31d &lt;= 13670.59802498053) OR
+        -- Branch 52 (source: cv_tree, n_conds: 11, train_tp: 27, train_fp: 25)
+        (hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23703.5 AND hist_sum_amount &gt; 4647384.5 AND ct_ops_transfer_elcom_90d &lt;= 5.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND ct_unq_dates_350d &lt;= 86.5 AND MEAN_AMT_RURPAYMENT_050_61d &gt; 10449883.5) OR
+        -- Branch 53 (source: cv_tree, n_conds: 12, train_tp: 72, train_fp: 67)
+        (hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND ct_ops_cards_31d &gt; 0.5 AND std_nolognorm_N_UNQ_SNDRS_OLD_P2P_350d &lt;= 1.1342843770980835 AND hist_max_amount &lt;= 230980.0 AND std_lognorm_QTL_025_AMT_RURPAY_350d &lt;= 6.151466369628906 AND std_pct_sum_elcom_350d &lt;= 0.186826691031456 AND QTL_AMT_NOT_TRADE_075_31d &lt;= 15010.25 AND risk_ratio_transaction_amount_hist_1day &gt; -0.5) OR
+        -- Branch 54 (source: cv_tree, n_conds: 13, train_tp: 37, train_fp: 35)
+        (hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23703.5 AND hist_sum_amount &gt; 4647384.5 AND ct_ops_transfer_elcom_90d &lt;= 5.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND ct_unq_dates_350d &lt;= 86.5 AND MEAN_AMT_RURPAYMENT_050_61d &lt;= 10449883.5 AND hist_max_amount &gt; 5232300.0 AND QTL_AMT_card_050_61d &gt; 19809.53515625) OR
+        -- Branch 55 (source: cv_combo, n_conds: 2, train_tp: 8, train_fp: 8)
+        (ct_enter_pan_sbol_reg &gt; 5.0 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055) OR
+        -- Branch 56 (source: cv_tree, n_conds: 12, train_tp: 32, train_fp: 34)
+        (hist_mean_amount &lt;= 711562.65625 AND age_person &gt; 22016.5 AND hist_n_update_user &gt; 1.5 AND hist_max_amount &lt;= 2325.5 AND cards_count_tgbot &gt; 1.5 AND cards_count_tgbot_victims_crm_alert_3 &lt;= 0.5 AND max_max_balance_31d &gt; 3571.39501953125 AND cards_count_vkcall_match &lt;= 1.5 AND mean_QTL_095_AMT_card_350d &lt;= 32807.2626953125 AND mean_pct_CT_INCOMING_NEW_P2P_CT_OUT_OPS_UKO_350d &lt;= 0.19131944328546524 AND pct_CT_INCOMING_NEW_P2P_350d &lt;= 0.01832182239741087 AND SUM_OPS_UKO_350d &gt; 1580825.8125) OR
+        -- Branch 57 (source: cv_tree, n_conds: 15, train_tp: 15, train_fp: 16)
+        (hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23703.5 AND hist_sum_amount &gt; 4647384.5 AND ct_ops_transfer_elcom_90d &lt;= 5.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND ct_unq_dates_350d &lt;= 86.5 AND MEAN_AMT_RURPAYMENT_050_61d &lt;= 10449883.5 AND hist_max_amount &gt; 5232300.0 AND QTL_AMT_card_050_61d &lt;= 19809.53515625 AND sum_has_total_last_balance_lower_10k_31d &lt;= 15.0 AND SUM_INCOMING_OLD_P2P_31d &gt; 642451.125) OR
+        -- Branch 58 (source: cv_tree, n_conds: 11, train_tp: 88, train_fp: 98)
+        (hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND pct_ct_unq_new_inc_cards_rsa_350d &lt;= 0.04499494470655918 AND max_max_balance_90d &gt; 9577.89013671875 AND hist_n_unique_dates &gt; 1.5 AND rest &gt; 36581.96875 AND sum_cards_amt_61d &gt; 29436.6796875 AND cards_count_vkcall_match_other_out &lt;= 2.5) OR
+        -- Branch 59 (source: cv_tree, n_conds: 12, train_tp: 67, train_fp: 75)
+        (hist_mean_amount &gt; 711562.65625 AND hist_mean_amount &gt; 2003335.1875 AND age_person &gt; 21237.0 AND ct_signin_wo_otp &gt; 0.5 AND ct_vsp_identifications &lt;= 0.5 AND age_person &gt; 23709.0 AND N_UNQ_DATES_350d &lt;= 196.5 AND hist_sum_amount &gt; 9005005.5 AND n_unq_inc_cards_rsa_31d &lt;= 11.5 AND ct_ops_telefon_elcom_90d &lt;= 0.5 AND pct_SUM_AMT_RURPAYMENT_350d &gt; 3.7626644372940063 AND QTL_TRADE_mccs_075_61d &lt;= 844.3269348144531) OR
+        -- Branch 60 (source: cv_tree, n_conds: 9, train_tp: 33, train_fp: 37)
+        (hist_mean_amount &gt; 711562.65625 AND hist_mean_amount &gt; 2003335.1875 AND age_person &gt; 21237.0 AND ct_signin_wo_otp &gt; 0.5 AND ct_vsp_identifications &lt;= 0.5 AND age_person &gt; 23709.0 AND N_UNQ_DATES_350d &lt;= 196.5 AND hist_sum_amount &gt; 9005005.5 AND n_unq_inc_cards_rsa_31d &gt; 11.5) OR
+        -- Branch 61 (source: deepened, n_conds: 15, train_tp: 66, train_fp: 74)
+        (age_person &gt; 20155.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_transaction_amount_hist_1hour &gt; 15612.5 AND QTL_AMT_JURSB_050_61d &gt; 86447.5 AND hist_n_update_user &gt; 1.0 AND hist_mean_amount &gt; 2500000.0 AND sum_cards_amt_61d &lt;= 2166117.693814968 AND SUM_INCOMING_PAYMENTS_RSA_350d &lt;= 45755476.83497788 AND QTL_ELCOM_025_31d &lt;= 2530.071080757343 AND cards_count_tgbot_fraud_call &lt;= 0.0 AND ct_unq_osids &lt;= 1.0 AND hist_n_events &gt; 4.496915329527663 AND cards_count_vkcall &lt;= 0.0 AND ct_signin_wo_otp &gt; 0.8666224907133859) OR
+        -- Branch 62 (source: cv_tree, n_conds: 11, train_tp: 42, train_fp: 50)
+        (hist_mean_amount &gt; 711562.65625 AND hist_mean_amount &gt; 2003335.1875 AND age_person &gt; 21237.0 AND ct_signin_wo_otp &gt; 0.5 AND ct_vsp_identifications &lt;= 0.5 AND age_person &gt; 23709.0 AND N_UNQ_DATES_350d &gt; 196.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND hist_max_amount &gt; 6502576.5 AND QTL_AMT_TRADE_050_61d &lt;= 1257.8087158203125 AND max_rurpayment_350d &lt;= 15050.0) OR
+        -- Branch 63 (source: cv_tree, n_conds: 12, train_tp: 331, train_fp: 399)
+        (hist_mean_amount &lt;= 711562.65625 AND age_person &gt; 22016.5 AND hist_n_update_user &gt; 1.5 AND hist_max_amount &lt;= 2325.5 AND cards_count_tgbot &gt; 1.5 AND cards_count_tgbot_victims_crm_alert_3 &lt;= 0.5 AND max_max_balance_31d &gt; 3571.39501953125 AND cards_count_vkcall_match &lt;= 1.5 AND mean_QTL_095_AMT_card_350d &lt;= 32807.2626953125 AND mean_pct_CT_INCOMING_NEW_P2P_CT_OUT_OPS_UKO_350d &lt;= 0.19131944328546524 AND pct_CT_INCOMING_NEW_P2P_350d &lt;= 0.01832182239741087 AND SUM_OPS_UKO_350d &lt;= 1580825.8125) OR
+        -- Branch 64 (source: cv_tree, n_conds: 11, train_tp: 28, train_fp: 34)
+        (hist_mean_amount &lt;= 878563.625 AND age_person &lt;= 22172.5 AND ct_enter_pan_sbol_reg &lt;= 0.5 AND cards_count_tgbot_fraud_call &gt; 0.5 AND CT_OPS_UKO_350d &gt; 28.0 AND cards_count_tgbot &gt; 1.5 AND hist_n_unique_dates &gt; 0.5 AND hist_n_payment &lt;= 10.5 AND hist_max_amount &lt;= 717500.0 AND sum_amt_cards_350d &lt;= 223798.046875 AND cards_count_tgbot_fraud_call_5 &gt; 0.5) OR
+        -- Branch 65 (source: cv_tree, n_conds: 11, train_tp: 30, train_fp: 38)
+        (hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND ct_ops_cards_31d &gt; 0.5 AND std_nolognorm_N_UNQ_SNDRS_OLD_P2P_350d &lt;= 1.1342843770980835 AND hist_max_amount &lt;= 230980.0 AND std_lognorm_QTL_025_AMT_RURPAY_350d &lt;= 6.151466369628906 AND std_pct_sum_elcom_350d &lt;= 0.186826691031456 AND QTL_AMT_NOT_TRADE_075_31d &gt; 15010.25) OR
+        -- Branch 66 (source: cv_tree, n_conds: 14, train_tp: 27, train_fp: 35)
+        (hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &lt;= 2.5 AND ct_sms_confirm &gt; 0.5 AND ct_signin_w_pan &gt; 0.5 AND CT_NEW_MP_350d &lt;= 24.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_sum_to_rcvrs_1day &lt;= 921.5 AND N_UNQ_RCVRS_OLD_P2P_350d &lt;= 43.5 AND QTL_AMT_RURPAY_025_31d &lt;= 99591.66796875 AND CT_NEW_JURSB_61d &lt;= 1.5 AND max_amt_elcom_7d &lt;= 519.0 AND std_lognorm_sum_amt_cards_350d &lt;= 0.11531415954232216) OR
+        -- Branch 67 (source: cv_tree, n_conds: 11, train_tp: 65, train_fp: 89)
+        (hist_mean_amount &lt;= 711562.65625 AND age_person &lt;= 22016.5 AND ct_signin_w_pan &lt;= 0.5 AND cards_count_tgbot_fraud_call &gt; 0.5 AND std_nolognorm_CT_OPS_UKO_350d &gt; 2.280286431312561 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_sum_last_balance_90d &gt; 43.44500160217285 AND hist_n_payment &lt;= 4.5 AND cards_count_tgbot_fraud_call_4 &lt;= 0.5 AND cards_count_tgbot_fraud_call_5 &gt; 0.5 AND hist_n_events &gt; 4.5) OR
+        -- Branch 68 (source: cv_tree, n_conds: 12, train_tp: 135, train_fp: 195)
+        (hist_mean_amount &lt;= 878563.625 AND age_person &lt;= 22172.5 AND ct_enter_pan_sbol_reg &lt;= 0.5 AND cards_count_tgbot_fraud_call &gt; 0.5 AND CT_OPS_UKO_350d &gt; 28.0 AND cards_count_tgbot &gt; 1.5 AND hist_n_unique_dates &gt; 0.5 AND hist_n_payment &lt;= 10.5 AND hist_max_amount &lt;= 717500.0 AND sum_amt_cards_350d &gt; 223798.046875 AND hist_n_payment &lt;= 3.5 AND CT_APPEAL_90d &lt;= 1.5) OR
+        -- Branch 69 (source: cv_tree, n_conds: 10, train_tp: 35, train_fp: 52)
+        (hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &lt;= 2.5 AND ct_sms_confirm &gt; 0.5 AND ct_enter_pan_sbol_reg &gt; 0.5 AND CT_NEW_MP_350d &lt;= 16.5 AND max_max_balance_7d &gt; 24714.8349609375 AND QTL_AMT_TRADE_095_7d &lt;= 1813.214599609375 AND mean_QTL_095_TRADE_mccs_350d &lt;= 613.3033447265625)
+        THEN 1 ELSE 0 END AS is_fraud_predicted
+    FROM ops_with_features
+)
+
+-- -----------------------------------------------------------------------------
+-- Final result
+-- -----------------------------------------------------------------------------
+SELECT
+    event_id,
+    user_id,
+    target,
+    is_fraud_predicted
+FROM rule_result;
+</pre>
+</div>
+<h2>3. Примеры срабатываний (TP из OSS)</h2>
+<div class="section">
+<table>
+<tr>
+<th>#</th>
+<th>user_id</th>
+<th>event_id</th>
+<th>Сработавшие ветви</th>
+<th>Файл с деталями</th>
+</tr>
+<tr>
+<td>1</td>
+<td><strong>UFS36946793</strong></td>
+<td><code>4ad5ff3f-26ad-41e8-a18a-a703b0f22a58</code></td>
+<td><span class="vetv-code">B33</span>, <span class="vetv-code">B47</span>, <span class="vetv-code">B48</span></td>
+<td><a class="excel-link" href="file:///home/23111424_omega-sbrf-ru/deepagent_langchain/artifacts/rule_evaluation/excel_examples/пример_1_user_UFS36946793.xlsx">📄 пример_1_user_UFS36946793.xlsx</a></td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>UFS80458491</strong></td>
+<td><code>2a0a7845-ba2e-44b7-a747-ddd0524fc3fb</code></td>
+<td><span class="vetv-code">B67</span></td>
+<td><a class="excel-link" href="file:///home/23111424_omega-sbrf-ru/deepagent_langchain/artifacts/rule_evaluation/excel_examples/пример_2_user_UFS80458491.xlsx">📄 пример_2_user_UFS80458491.xlsx</a></td>
+</tr>
+</table>
+</div>
+<h2>4. Разбор всех 68 ветвей</h2><p class="subtitle">Столбец «Описание ветви» передаёт сочетание условий понятными словами. Для целочисленных счётчиков дробные пороги представлены эквивалентными количествами событий; при повторных условиях одного признака оставлены наиболее строгие границы. Знак ≈ означает округление для чтения. Точные значения сохранены в столбце «Условия». Неоднозначные имена признаков оставлены без расшифровки.</p>
+<div class="section">
+<div class="scroll-table">
+<table>
+<tr>
+<th rowspan="2">Ветвь</th>
+<th rowspan="2">Усл.</th>
+<th rowspan="2">Условия</th><th class="desc-header" rowspan="2">Описание ветви</th>
+<th class="split-header" colspan="4">TRAIN</th>
+<th class="split-header" colspan="4">TEST</th>
+<th class="split-header" colspan="4">OSS</th>
+</tr>
+<tr>
+<th class="split-header">TP</th>
+<th class="split-header">FP</th>
+<th class="split-header">Сраб.</th>
+<th class="split-header">Точн.</th>
+<th class="split-header">TP</th>
+<th class="split-header">FP</th>
+<th class="split-header">Сраб.</th>
+<th class="split-header">Точн.</th>
+<th class="split-header">TP</th>
+<th class="split-header">FP</th>
+<th class="split-header">Сраб.</th>
+<th class="split-header">Точн.</th>
+</tr>
+<tr><td><span class="vetv-code">B00</span></td><td>6</td><td class="cond-text">age_person &gt; 20155.5 AND ct_vsp_identifications &gt; 0.5 AND hist_n_update_user &gt; 3.5 AND has_rdp &gt; 0.5 AND QTL_AMT_JURSB_050_61d &gt; 68652.4 AND ct_signin_wo_otp &lt;= 3.5</td><td class="branch-description">возраст клиента старше ≈55,2 года; есть идентификации в ВСП; обновления данных пользователя в истории — не менее 4; есть признак RDP; медиана суммы JURSB за 61 день &gt; 68 652,4; входы без OTP — не более 3.</td><td>5</td><td>0</td><td>5</td><td class="prec-high">100.0%</td><td>1</td><td>1</td><td>2</td><td class="prec-mid">50.0%</td><td>0</td><td>2</td><td>2</td><td class="prec-zero">0.0%</td></tr>
+<tr><td><span class="vetv-code">B01</span></td><td>7</td><td class="cond-text">age_person &gt; 20155.5 AND ct_vsp_identifications &gt; 0.5 AND hist_n_update_user &gt; 3.5 AND has_rdp &gt; 0.5 AND QTL_AMT_JURSB_050_61d &gt; 68652.4 AND ct_signin_wo_otp &gt; 3.5 AND hist_n_events &lt;= 47</td><td class="branch-description">возраст клиента старше ≈55,2 года; есть идентификации в ВСП; обновления данных пользователя в истории — не менее 4; есть признак RDP; медиана суммы JURSB за 61 день &gt; 68 652,4; входы без OTP — не менее 4; все события в истории — не более 47.</td><td>10</td><td>0</td><td>10</td><td class="prec-high">100.0%</td><td>1</td><td>0</td><td>1</td><td class="prec-high">100.0%</td><td>2</td><td>0</td><td>2</td><td class="prec-high">100.0%</td></tr>
+<tr><td><span class="vetv-code">B02</span></td><td>3</td><td class="cond-text">ct_sbol_confirm &gt; 0 AND min_depo_days_after_prolong_prom_1d &gt; 0 AND max_max_balance_7d &gt; 12031.75</td><td class="branch-description">есть подтверждения в СБОЛ; <code>min_depo_days_after_prolong_prom_1d</code> &gt; 0; максимальный остаток за 7 дней &gt; 12 031,75.</td><td>6</td><td>0</td><td>6</td><td class="prec-high">100.0%</td><td>5</td><td>1</td><td>6</td><td class="prec-high">83.3%</td><td>2</td><td>0</td><td>2</td><td class="prec-high">100.0%</td></tr>
+<tr><td><span class="vetv-code">B03</span></td><td>3</td><td class="cond-text">cards_count_tgbot_fraud_call_4 &gt; 0 AND min_true_depo_rate_prom_1d &gt; 0 AND hist_mean_amount &gt; 11768836.383333333</td><td class="branch-description"><code>cards_count_tgbot_fraud_call_4</code> &gt; 0; <code>min_true_depo_rate_prom_1d</code> &gt; 0; средняя сумма событий в истории &gt; ≈11 768 836,38.</td><td>7</td><td>0</td><td>7</td><td class="prec-high">100.0%</td><td>5</td><td>0</td><td>5</td><td class="prec-high">100.0%</td><td>4</td><td>0</td><td>4</td><td class="prec-high">100.0%</td></tr>
+<tr><td><span class="vetv-code">B04</span></td><td>3</td><td class="cond-text">ct_sbol_confirm &gt; 0 AND sum_has_compromise_31d &gt; 0 AND hist_mean_amount &gt; 2890000</td><td class="branch-description">есть подтверждения в СБОЛ; <code>sum_has_compromise_31d</code> &gt; 0; средняя сумма событий в истории &gt; 2 890 000.</td><td>5</td><td>0</td><td>5</td><td class="prec-high">100.0%</td><td>1</td><td>0</td><td>1</td><td class="prec-high">100.0%</td><td>0</td><td>0</td><td>0</td><td class="prec-zero">0.0%</td></tr>
+<tr><td><span class="vetv-code">B05</span></td><td>3</td><td class="cond-text">ct_sbol_confirm &gt; 0 AND ct_pwd_change &gt; 0 AND hist_mean_amount &gt; 173219.06666666668</td><td class="branch-description">есть подтверждения в СБОЛ; есть смены пароля; средняя сумма событий в истории &gt; ≈173 219,07.</td><td>6</td><td>0</td><td>6</td><td class="prec-high">100.0%</td><td>2</td><td>0</td><td>2</td><td class="prec-high">100.0%</td><td>0</td><td>1</td><td>1</td><td class="prec-zero">0.0%</td></tr>
+<tr><td><span class="vetv-code">B06</span></td><td>3</td><td class="cond-text">has_rdp &gt; 0 AND max_true_depo_term_prom_1d &gt; 0 AND ct_vk_check &gt; 0</td><td class="branch-description">есть признак RDP; <code>max_true_depo_term_prom_1d</code> &gt; 0; <code>ct_vk_check</code> &gt; 0.</td><td>33</td><td>0</td><td>33</td><td class="prec-high">100.0%</td><td>8</td><td>1</td><td>9</td><td class="prec-high">88.9%</td><td>8</td><td>1</td><td>9</td><td class="prec-high">88.9%</td></tr>
+<tr><td><span class="vetv-code">B07</span></td><td>4</td><td class="cond-text">lost_profit_early_closed_prom_1d &gt; 0 AND ct_signin_w_pan &gt; 0 AND ct_unq_ips &lt;= 2 AND age_person &gt; 18929.254192708773</td><td class="branch-description"><code>lost_profit_early_closed_prom_1d</code> &gt; 0; есть входы с использованием PAN; уникальные IP-адреса — не более 2; возраст клиента старше ≈51,8 года.</td><td>35</td><td>0</td><td>35</td><td class="prec-high">100.0%</td><td>5</td><td>0</td><td>5</td><td class="prec-high">100.0%</td><td>7</td><td>0</td><td>7</td><td class="prec-high">100.0%</td></tr>
+<tr><td><span class="vetv-code">B08</span></td><td>3</td><td class="cond-text">cards_count_tgbot_victims_crm_boss_3hr &gt; 0 AND cards_count_tgbot_fraud_call_4_3hr &gt; 2 AND age_person &gt; 12264.517269746733</td><td class="branch-description"><code>cards_count_tgbot_victims_crm_boss_3hr</code> &gt; 0; <code>cards_count_tgbot_fraud_call_4_3hr</code> &gt; 2; возраст клиента старше ≈33,6 года.</td><td>5</td><td>0</td><td>5</td><td class="prec-high">100.0%</td><td>1</td><td>0</td><td>1</td><td class="prec-high">100.0%</td><td>0</td><td>0</td><td>0</td><td class="prec-zero">0.0%</td></tr>
+<tr><td><span class="vetv-code">B09</span></td><td>3</td><td class="cond-text">cards_count_tgbot_fraud_call_5 &gt; 0 AND min_depo_days_after_prolong_prom_1d &gt; 0 AND pct_tgbot_7d_31d &lt;= 0</td><td class="branch-description"><code>cards_count_tgbot_fraud_call_5</code> &gt; 0; <code>min_depo_days_after_prolong_prom_1d</code> &gt; 0; <code>pct_tgbot_7d_31d</code> ≤ 0.</td><td>5</td><td>0</td><td>5</td><td class="prec-high">100.0%</td><td>1</td><td>0</td><td>1</td><td class="prec-high">100.0%</td><td>2</td><td>0</td><td>2</td><td class="prec-high">100.0%</td></tr>
+<tr><td><span class="vetv-code">B10</span></td><td>12</td><td class="cond-text">age_person &gt; 20155.5 AND ct_vsp_identifications &gt; 0.5 AND hist_n_update_user &gt; 3.5 AND has_rdp &lt;= 0.5 AND pct_tgbot_7d_31d &gt; 0.917 AND hist_branch_events &gt; 0.5 AND age_person &lt;= 22597 AND ct_vk_check &gt; 0 AND std_nolognorm_N_UNQ_DATES_350d &lt;= 4.710888321622479 AND sum_to_new_rcvrs_1day &lt;= 0 AND rest &lt;= 4109451.2896761396 AND ct_signin &gt; 1.48410927383114</td><td class="branch-description">возраст клиента старше ≈55,2 года и до ≈61,9 года; есть идентификации в ВСП; обновления данных пользователя в истории — не менее 4; признак RDP отсутствует; <code>pct_tgbot_7d_31d</code> &gt; 0,917; есть события через отделение (BRANCH) в истории; <code>ct_vk_check</code> &gt; 0; <code>std_nolognorm_N_UNQ_DATES_350d</code> ≤ ≈4,711; сумма новым получателям за 1 день ≤ 0; <code>rest</code> ≤ ≈4 109 451,29; входы в систему — не менее 2.</td><td>15</td><td>0</td><td>15</td><td class="prec-high">100.0%</td><td>3</td><td>5</td><td>8</td><td class="prec-low">37.5%</td><td>0</td><td>1</td><td>1</td><td class="prec-zero">0.0%</td></tr>
+<tr><td><span class="vetv-code">B11</span></td><td>13</td><td class="cond-text">age_person &gt; 20155.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_transaction_amount_hist_1hour &gt; 15612.5 AND QTL_AMT_JURSB_050_61d &lt;= 86447.5 AND hist_call_center_events &lt;= 9.5 AND hist_call_center_events &gt; 1 AND CT_OLD_P2P_350d &lt;= 32.5 AND hist_n_issuer_events &lt;= 6.356455617501904 AND ct_unq_osids &lt;= 1 AND CT_OPS_UKO_350d &lt;= 594.274136279816 AND hist_branch_events &lt;= 0 AND std_lognorm_QTL_025_AMT_RURPAY_350d &gt; -0.6323478270139624</td><td class="branch-description">возраст клиента старше ≈55,2 года; нет идентификаций в ВСП; <code>cards_count_tgbot_fraud_call_2</code> ≤ 0,5; максимальная сумма операции за 1 час &gt; 15 612,5; медиана суммы JURSB за 61 день ≤ 86 447,5; события контактного центра в истории: от 2 до 9; количество OLD_P2P за 350 дней — не более 32; события с подканалом ISSUER в истории — не более 6; уникальные OSID — не более 1; <code>CT_OPS_UKO_350d</code> ≤ ≈594,274; нет событий через отделение (BRANCH) в истории; <code>std_lognorm_QTL_025_AMT_RURPAY_350d</code> &gt; ≈-0,632.</td><td>72</td><td>11</td><td>83</td><td class="prec-high">86.8%</td><td>12</td><td>3</td><td>15</td><td class="prec-high">80.0%</td><td>8</td><td>4</td><td>12</td><td class="prec-mid">66.7%</td></tr>
+<tr><td><span class="vetv-code">B12</span></td><td>11</td><td class="cond-text">age_person &lt;= 20155.5 AND age_person &lt;= 20131 AND max_transaction_amount_hist_1hour &lt;= 5504 AND hist_call_center_events &gt; 2.5 AND hist_mb_on &gt; 0.5 AND sum_amt_700_vydacha_nalichnyh_350d &gt; 430800 AND ct_signin_w_pan &gt; 0 AND max_max_balance_7d &gt; 154953.609375 AND ct_calls_bad_phone_to_client_events &lt;= 9.895802963978227 AND ct_signin &gt; 9.745412480180391 AND SUM_AMT_RURPAYMENT_350d &lt;= 6681970.360688267</td><td class="branch-description">возраст клиента не старше ≈55,1 года; максимальная сумма операции за 1 час ≤ 5 504; события контактного центра в истории — не менее 3; есть события с подтипом MB_ON в истории; сумма выдачи наличных (код 700) за 350 дней &gt; 430 800; есть входы с использованием PAN; максимальный остаток за 7 дней &gt; ≈154 953,61; <code>ct_calls_bad_phone_to_client_events</code> ≤ ≈9,896; входы в систему — не менее 10; сумма RURPAYMENT за 350 дней ≤ ≈6 681 970,36.</td><td>11</td><td>1</td><td>12</td><td class="prec-high">91.7%</td><td>1</td><td>1</td><td>2</td><td class="prec-mid">50.0%</td><td>1</td><td>0</td><td>1</td><td class="prec-high">100.0%</td></tr>
+<tr><td><span class="vetv-code">B13</span></td><td>3</td><td class="cond-text">has_rdp &gt; 0 AND pct_tgbot_fraud_call_7d_31d &gt; 0 AND hist_n_events &gt; 0</td><td class="branch-description">есть признак RDP; <code>pct_tgbot_fraud_call_7d_31d</code> &gt; 0; есть все события в истории.</td><td>35</td><td>7</td><td>42</td><td class="prec-high">83.3%</td><td>3</td><td>4</td><td>7</td><td class="prec-low">42.9%</td><td>8</td><td>4</td><td>12</td><td class="prec-mid">66.7%</td></tr>
+<tr><td><span class="vetv-code">B14</span></td><td>3</td><td class="cond-text">hist_mean_amount &gt; 11200000 AND has_rdp &gt; 0 AND max_max_balance_7d &gt; -10</td><td class="branch-description">средняя сумма событий в истории &gt; 11 200 000; есть признак RDP; максимальный остаток за 7 дней &gt; -10.</td><td>116</td><td>39</td><td>155</td><td class="prec-mid">74.8%</td><td>22</td><td>10</td><td>32</td><td class="prec-mid">68.8%</td><td>17</td><td>8</td><td>25</td><td class="prec-mid">68.0%</td></tr>
+<tr><td><span class="vetv-code">B15</span></td><td>3</td><td class="cond-text">cards_count_tgbot_fraud_call &gt; 1 AND sum_amt_partial_deposit_withdr &gt; 26619211.50000002 AND hist_mean_amount &gt; 0</td><td class="branch-description"><code>cards_count_tgbot_fraud_call</code> &gt; 1; сумма частичных снятий со вкладов &gt; ≈26 619 211,5; средняя сумма событий в истории &gt; 0.</td><td>18</td><td>6</td><td>24</td><td class="prec-mid">75.0%</td><td>3</td><td>2</td><td>5</td><td class="prec-mid">60.0%</td><td>5</td><td>3</td><td>8</td><td class="prec-mid">62.5%</td></tr>
+<tr><td><span class="vetv-code">B16</span></td><td>3</td><td class="cond-text">pct_tgbot_fraud_call_7d_31d &gt; 0 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055 AND max_max_balance_7d &gt; -10</td><td class="branch-description"><code>pct_tgbot_fraud_call_7d_31d</code> &gt; 0; сумма частичных снятий со вкладов &gt; ≈7 614 030; максимальный остаток за 7 дней &gt; -10.</td><td>71</td><td>36</td><td>107</td><td class="prec-mid">66.4%</td><td>9</td><td>8</td><td>17</td><td class="prec-mid">52.9%</td><td>16</td><td>5</td><td>21</td><td class="prec-mid">76.2%</td></tr>
+<tr><td><span class="vetv-code">B18</span></td><td>2</td><td class="cond-text">has_rdp &gt; 0 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055</td><td class="branch-description">есть признак RDP; сумма частичных снятий со вкладов &gt; ≈7 614 030.</td><td>107</td><td>40</td><td>147</td><td class="prec-mid">72.8%</td><td>24</td><td>11</td><td>35</td><td class="prec-mid">68.6%</td><td>19</td><td>5</td><td>24</td><td class="prec-mid">79.2%</td></tr>
+<tr><td><span class="vetv-code">B19</span></td><td>2</td><td class="cond-text">ct_tgbot_7d &gt; 5 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055</td><td class="branch-description">события tgbot за 7 дней — не менее 6; сумма частичных снятий со вкладов &gt; ≈7 614 030.</td><td>31</td><td>12</td><td>43</td><td class="prec-mid">72.1%</td><td>10</td><td>4</td><td>14</td><td class="prec-mid">71.4%</td><td>4</td><td>1</td><td>5</td><td class="prec-high">80.0%</td></tr>
+<tr><td><span class="vetv-code">B20</span></td><td>3</td><td class="cond-text">has_rdp &gt; 0 AND sum_to_new_rcvrs_1hour &gt; 15000 AND max_max_balance_90d &gt; 2616.914465332031</td><td class="branch-description">есть признак RDP; сумма новым получателям за 1 час &gt; 15 000; максимальный остаток за 90 дней &gt; ≈2 616,91.</td><td>33</td><td>13</td><td>46</td><td class="prec-mid">71.7%</td><td>6</td><td>2</td><td>8</td><td class="prec-mid">75.0%</td><td>9</td><td>2</td><td>11</td><td class="prec-high">81.8%</td></tr>
+<tr><td><span class="vetv-code">B21</span></td><td>10</td><td class="cond-text">hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND pct_ct_unq_new_inc_cards_rsa_350d &lt;= 0.04499494470655918 AND max_max_balance_90d &gt; 9577.89013671875 AND hist_n_unique_dates &lt;= 1.5 AND min_amt_elcom_90d &lt;= 709 AND pct_SUM_AMT_JURSB_350d &gt; 1.907647430896759</td><td class="branch-description">средняя сумма событий в истории ≤ 878 563,625; возраст клиента старше ≈60,7 года; обновления данных пользователя в истории — не менее 2; число карт с сигналом tgbot — не менее 3; события PAYMENT в истории — не более 2; <code>pct_ct_unq_new_inc_cards_rsa_350d</code> ≤ ≈0,045; максимальный остаток за 90 дней &gt; ≈9 577,89; даты с событиями в истории — не более 1; минимальная сумма операции ELCOM за 90 дней ≤ 709; <code>pct_SUM_AMT_JURSB_350d</code> &gt; ≈1,908.</td><td>15</td><td>7</td><td>22</td><td class="prec-mid">68.2%</td><td>5</td><td>2</td><td>7</td><td class="prec-mid">71.4%</td><td>4</td><td>0</td><td>4</td><td class="prec-high">100.0%</td></tr>
+<tr><td><span class="vetv-code">B22</span></td><td>10</td><td class="cond-text">hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND pct_ct_unq_new_inc_cards_rsa_350d &lt;= 0.04499494470655918 AND max_max_balance_90d &gt; 9577.89013671875 AND hist_n_unique_dates &lt;= 1.5 AND min_amt_elcom_90d &lt;= 709 AND pct_SUM_AMT_JURSB_350d &lt;= 1.907647430896759</td><td class="branch-description">средняя сумма событий в истории ≤ 878 563,625; возраст клиента старше ≈60,7 года; обновления данных пользователя в истории — не менее 2; число карт с сигналом tgbot — не менее 3; события PAYMENT в истории — не более 2; <code>pct_ct_unq_new_inc_cards_rsa_350d</code> ≤ ≈0,045; максимальный остаток за 90 дней &gt; ≈9 577,89; даты с событиями в истории — не более 1; минимальная сумма операции ELCOM за 90 дней ≤ 709; <code>pct_SUM_AMT_JURSB_350d</code> ≤ ≈1,908.</td><td>305</td><td>145</td><td>450</td><td class="prec-mid">67.8%</td><td>74</td><td>34</td><td>108</td><td class="prec-mid">68.5%</td><td>72</td><td>41</td><td>113</td><td class="prec-mid">63.7%</td></tr>
+<tr><td><span class="vetv-code">B23</span></td><td>2</td><td class="cond-text">ct_bfd_detects &gt; 1 AND has_rdp &gt; 0</td><td class="branch-description"><code>ct_bfd_detects</code> &gt; 1; есть признак RDP.</td><td>25</td><td>12</td><td>37</td><td class="prec-mid">67.6%</td><td>2</td><td>1</td><td>3</td><td class="prec-mid">66.7%</td><td>6</td><td>2</td><td>8</td><td class="prec-mid">75.0%</td></tr>
+<tr><td><span class="vetv-code">B24</span></td><td>3</td><td class="cond-text">cards_count_tgbot_fraud_call &gt; 5 AND hist_n_update_user &gt; 0 AND age_person &gt; 0</td><td class="branch-description"><code>cards_count_tgbot_fraud_call</code> &gt; 5; есть обновления данных пользователя в истории; возраст клиента старше ≈0,0 года.</td><td>95</td><td>47</td><td>142</td><td class="prec-mid">66.9%</td><td>16</td><td>9</td><td>25</td><td class="prec-mid">64.0%</td><td>18</td><td>10</td><td>28</td><td class="prec-mid">64.3%</td></tr>
+<tr><td><span class="vetv-code">B25</span></td><td>3</td><td class="cond-text">ct_enter_pan_sbol_reg &gt; 2 AND sum_to_new_rcvrs_1hour &gt; 15000 AND hist_n_check &lt;= 5</td><td class="branch-description">вводы PAN при регистрации в СБОЛ — не менее 3; сумма новым получателям за 1 час &gt; 15 000; события CHECK в истории — не более 5.</td><td>30</td><td>15</td><td>45</td><td class="prec-mid">66.7%</td><td>3</td><td>5</td><td>8</td><td class="prec-low">37.5%</td><td>7</td><td>11</td><td>18</td><td class="prec-low">38.9%</td></tr>
+<tr><td><span class="vetv-code">B26</span></td><td>2</td><td class="cond-text">ct_vk_check &gt; 5 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055</td><td class="branch-description"><code>ct_vk_check</code> &gt; 5; сумма частичных снятий со вкладов &gt; ≈7 614 030.</td><td>13</td><td>7</td><td>20</td><td class="prec-mid">65.0%</td><td>2</td><td>1</td><td>3</td><td class="prec-mid">66.7%</td><td>2</td><td>4</td><td>6</td><td class="prec-low">33.3%</td></tr>
+<tr><td><span class="vetv-code">B27</span></td><td>3</td><td class="cond-text">max_max_balance_90d &gt; 310008.484375 AND cards_count_vkcall_match &gt; 5 AND age_person &gt; 19923.499999999996</td><td class="branch-description">максимальный остаток за 90 дней &gt; ≈310 008,48; число карт с совпадением по vkcall — не менее 6; возраст клиента старше ≈54,5 года.</td><td>30</td><td>17</td><td>47</td><td class="prec-mid">63.8%</td><td>7</td><td>6</td><td>13</td><td class="prec-mid">53.8%</td><td>3</td><td>3</td><td>6</td><td class="prec-mid">50.0%</td></tr>
+<tr><td><span class="vetv-code">B28</span></td><td>2</td><td class="cond-text">rest &gt; 2185517.6000000015 AND cards_count_vkcall_match &gt; 5</td><td class="branch-description"><code>rest</code> &gt; ≈2 185 517,6; число карт с совпадением по vkcall — не менее 6.</td><td>32</td><td>19</td><td>51</td><td class="prec-mid">62.7%</td><td>6</td><td>5</td><td>11</td><td class="prec-mid">54.5%</td><td>4</td><td>6</td><td>10</td><td class="prec-low">40.0%</td></tr>
+<tr><td><span class="vetv-code">B29</span></td><td>3</td><td class="cond-text">hist_sum_amount &gt; 34946244.249999955 AND has_rdp &gt; 0 AND ct_signin &gt; 6</td><td class="branch-description">сумма событий в истории &gt; ≈34 946 244,25; есть признак RDP; входы в систему — не менее 7.</td><td>87</td><td>52</td><td>139</td><td class="prec-mid">62.6%</td><td>23</td><td>10</td><td>33</td><td class="prec-mid">69.7%</td><td>13</td><td>10</td><td>23</td><td class="prec-mid">56.5%</td></tr>
+<tr><td><span class="vetv-code">B30</span></td><td>15</td><td class="cond-text">age_person &gt; 20155.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_transaction_amount_hist_1hour &lt;= 15612.5 AND sum_amt_partial_deposit_withdr &lt;= 2363000 AND hist_max_amount &gt; 14745.5 AND hist_call_center_events &gt; 4.5 AND cards_ct_elcomm_cvv2_data &lt;= -0.5 AND ct_sms_confirm &gt; 0 AND CT_OPS_UKO_350d &lt;= 1435 AND SUM_AMT_TRANSPORT_AVTO_61d &lt;= 20966.10431235192 AND hist_n_events &gt; 15.054875936809978 AND sum_has_total_last_balance_lower_10k_31d &gt; -1.5392514062758789 AND pct_CT_INCOMING_NEW_P2P_350d &lt;= 0.09832087157866787 AND DDIFF_EVENT_DT__MIN_EVENT_TIME_350D &lt;= 392.2749102687897</td><td class="branch-description">возраст клиента старше ≈55,2 года; нет идентификаций в ВСП; <code>cards_count_tgbot_fraud_call_2</code> ≤ 0,5; максимальная сумма операции за 1 час ≤ 15 612,5; сумма частичных снятий со вкладов ≤ 2 363 000; максимальная сумма события в истории &gt; 14 745,5; события контактного центра в истории — не менее 5; <code>cards_ct_elcomm_cvv2_data</code> ≤ -0,5; есть SMS-подтверждения; <code>CT_OPS_UKO_350d</code> ≤ 1 435; сумма трат на автотранспорт за 61 день ≤ ≈20 966,1; все события в истории — не менее 16; <code>sum_has_total_last_balance_lower_10k_31d</code> &gt; ≈-1,539; <code>pct_CT_INCOMING_NEW_P2P_350d</code> ≤ ≈0,098; <code>DDIFF_EVENT_DT__MIN_EVENT_TIME_350D</code> ≤ ≈392,275.</td><td>40</td><td>27</td><td>67</td><td class="prec-mid">59.7%</td><td>6</td><td>5</td><td>11</td><td class="prec-mid">54.5%</td><td>7</td><td>7</td><td>14</td><td class="prec-mid">50.0%</td></tr>
+<tr><td><span class="vetv-code">B31</span></td><td>2</td><td class="cond-text">hist_mean_amount &gt; 1142254.0142857148 AND ct_vk_check &gt; 10</td><td class="branch-description">средняя сумма событий в истории &gt; ≈1 142 254,01; <code>ct_vk_check</code> &gt; 10.</td><td>10</td><td>6</td><td>16</td><td class="prec-mid">62.5%</td><td>1</td><td>1</td><td>2</td><td class="prec-mid">50.0%</td><td>0</td><td>2</td><td>2</td><td class="prec-zero">0.0%</td></tr>
+<tr><td><span class="vetv-code">B32</span></td><td>2</td><td class="cond-text">cards_count_vkcall_match &gt; 2 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055</td><td class="branch-description">число карт с совпадением по vkcall — не менее 3; сумма частичных снятий со вкладов &gt; ≈7 614 030.</td><td>28</td><td>17</td><td>45</td><td class="prec-mid">62.2%</td><td>8</td><td>4</td><td>12</td><td class="prec-mid">66.7%</td><td>1</td><td>7</td><td>8</td><td class="prec-low">12.5%</td></tr>
+<tr><td><span class="vetv-code">B33</span></td><td>13</td><td class="cond-text">age_person &gt; 20155.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_transaction_amount_hist_1hour &lt;= 15612.5 AND sum_amt_partial_deposit_withdr &gt; 2363000 AND CT_OPS_CARD_OPS_90d &lt;= 87.5 AND hist_call_center_events &lt;= 6.5 AND hist_max_amount &gt; 7520000 AND CT_OLD_P2P_350d &lt;= 30 AND cards_count_tgbot_3hr &lt;= 0 AND ct_signin_wo_otp &gt; 0.13764240686064744 AND mean_QTL_095_AMT_JURSB_350d &lt;= 19942224.90021721 AND SUM_AMT_TRANSPORT_AVTO_61d &lt;= 341629.7302152869</td><td class="branch-description">возраст клиента старше ≈55,2 года; нет идентификаций в ВСП; <code>cards_count_tgbot_fraud_call_2</code> ≤ 0,5; максимальная сумма операции за 1 час ≤ 15 612,5; сумма частичных снятий со вкладов &gt; 2 363 000; карточные операции за 90 дней — не более 87; события контактного центра в истории — не более 6; максимальная сумма события в истории &gt; 7 520 000; количество OLD_P2P за 350 дней — не более 30; нет карт с сигналом tgbot за 3 часа; есть входы без OTP; <code>mean_QTL_095_AMT_JURSB_350d</code> ≤ ≈19 942 224,9; сумма трат на автотранспорт за 61 день ≤ ≈341 629,73.</td><td>411</td><td>251</td><td>662</td><td class="prec-mid">62.1%</td><td>68</td><td>53</td><td>121</td><td class="prec-mid">56.2%</td><td>51</td><td>58</td><td>109</td><td class="prec-low">46.8%</td></tr>
+<tr><td><span class="vetv-code">B34</span></td><td>3</td><td class="cond-text">hist_sum_amount &gt; 16304477 AND pct_tgbot_fraud_call_7d_31d &gt; 0 AND risk_ratio_transaction_amount_hist_1day &lt;= -1</td><td class="branch-description">сумма событий в истории &gt; 16 304 477; <code>pct_tgbot_fraud_call_7d_31d</code> &gt; 0; <code>risk_ratio_transaction_amount_hist_1day</code> ≤ -1.</td><td>80</td><td>49</td><td>129</td><td class="prec-mid">62.0%</td><td>17</td><td>13</td><td>30</td><td class="prec-mid">56.7%</td><td>19</td><td>13</td><td>32</td><td class="prec-mid">59.4%</td></tr>
+<tr><td><span class="vetv-code">B35</span></td><td>3</td><td class="cond-text">hist_mean_amount &gt; 3362679.5454545454 AND pct_tgbot_fraud_call_7d_31d &gt; 0 AND risk_ratio_transaction_amount_hist_1day &lt;= -1</td><td class="branch-description">средняя сумма событий в истории &gt; ≈3 362 679,55; <code>pct_tgbot_fraud_call_7d_31d</code> &gt; 0; <code>risk_ratio_transaction_amount_hist_1day</code> ≤ -1.</td><td>83</td><td>51</td><td>134</td><td class="prec-mid">61.9%</td><td>20</td><td>15</td><td>35</td><td class="prec-mid">57.1%</td><td>21</td><td>13</td><td>34</td><td class="prec-mid">61.8%</td></tr>
+<tr><td><span class="vetv-code">B36</span></td><td>9</td><td class="cond-text">hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND pct_ct_unq_new_inc_cards_rsa_350d &lt;= 0.04499494470655918 AND max_max_balance_90d &gt; 9577.89013671875 AND hist_n_unique_dates &lt;= 1.5 AND min_amt_elcom_90d &gt; 709</td><td class="branch-description">средняя сумма событий в истории ≤ 878 563,625; возраст клиента старше ≈60,7 года; обновления данных пользователя в истории — не менее 2; число карт с сигналом tgbot — не менее 3; события PAYMENT в истории — не более 2; <code>pct_ct_unq_new_inc_cards_rsa_350d</code> ≤ ≈0,045; максимальный остаток за 90 дней &gt; ≈9 577,89; даты с событиями в истории — не более 1; минимальная сумма операции ELCOM за 90 дней &gt; 709.</td><td>14</td><td>9</td><td>23</td><td class="prec-mid">60.9%</td><td>4</td><td>1</td><td>5</td><td class="prec-high">80.0%</td><td>5</td><td>3</td><td>8</td><td class="prec-mid">62.5%</td></tr>
+<tr><td><span class="vetv-code">B37</span></td><td>8</td><td class="cond-text">hist_mean_amount &lt;= 711562.65625 AND age_person &gt; 22016.5 AND hist_n_update_user &lt;= 1.5 AND hist_branch_events &lt;= 1.5 AND age_person &lt;= 23737.5 AND rest &gt; 302972.6875 AND hist_sum_amount &lt;= 208592.5 AND cards_count_tgbot_victims_crm_alert_2_3hr &gt; 0.5</td><td class="branch-description">средняя сумма событий в истории ≤ ≈711 562,66; возраст клиента старше ≈60,3 года и до ≈65,0 года; обновления данных пользователя в истории — не более 1; события через отделение (BRANCH) в истории — не более 1; <code>rest</code> &gt; 302 972,6875; сумма событий в истории ≤ 208 592,5; <code>cards_count_tgbot_victims_crm_alert_2_3hr</code> &gt; 0,5.</td><td>51</td><td>34</td><td>85</td><td class="prec-mid">60.0%</td><td>13</td><td>9</td><td>22</td><td class="prec-mid">59.1%</td><td>6</td><td>6</td><td>12</td><td class="prec-mid">50.0%</td></tr>
+<tr><td><span class="vetv-code">B38</span></td><td>2</td><td class="cond-text">ct_tgbot_7d &gt; 10 AND hist_branch_events &gt; 0</td><td class="branch-description">события tgbot за 7 дней — не менее 11; есть события через отделение (BRANCH) в истории.</td><td>36</td><td>24</td><td>60</td><td class="prec-mid">60.0%</td><td>7</td><td>10</td><td>17</td><td class="prec-low">41.2%</td><td>5</td><td>8</td><td>13</td><td class="prec-low">38.5%</td></tr>
+<tr><td><span class="vetv-code">B39</span></td><td>15</td><td class="cond-text">age_person &lt;= 20155.5 AND age_person &lt;= 20131 AND max_transaction_amount_hist_1hour &lt;= 5504 AND hist_call_center_events &gt; 2.5 AND hist_mb_on &gt; 0.5 AND sum_amt_700_vydacha_nalichnyh_350d &lt;= 430800 AND sum_amt_700_vydacha_nalichnyh_350d &lt;= 134050 AND std_lognorm_QTL_025_AMT_RURPAY_350d &lt;= 3.25 AND ct_signin_w_pan &gt; 0 AND ct_signin_wo_otp &gt; 8 AND pct_CT_CHANGE_PHONE_350d &lt;= 0.3792500003130199 AND CT_OPS_UKO_350d &lt;= 2289.2431585484082 AND hist_n_payment &lt;= 19.052825691511366 AND ct_signin &lt;= 55.68971222195441 AND cards_count_tgbot &lt;= 0</td><td class="branch-description">возраст клиента не старше ≈55,1 года; максимальная сумма операции за 1 час ≤ 5 504; события контактного центра в истории — не менее 3; есть события с подтипом MB_ON в истории; сумма выдачи наличных (код 700) за 350 дней ≤ 134 050; <code>std_lognorm_QTL_025_AMT_RURPAY_350d</code> ≤ 3,25; есть входы с использованием PAN; входы без OTP — не менее 9; <code>pct_CT_CHANGE_PHONE_350d</code> ≤ ≈0,379; <code>CT_OPS_UKO_350d</code> ≤ ≈2 289,24; события PAYMENT в истории — не более 19; входы в систему — не более 55; нет карт с сигналом tgbot.</td><td>25</td><td>17</td><td>42</td><td class="prec-mid">59.5%</td><td>4</td><td>5</td><td>9</td><td class="prec-low">44.4%</td><td>1</td><td>5</td><td>6</td><td class="prec-low">16.7%</td></tr>
+<tr><td><span class="vetv-code">B41</span></td><td>14</td><td class="cond-text">hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &lt;= 23703.5 AND hist_sum_amount &gt; 10083000 AND CT_OPS_UKO_350d &lt;= 1167.5 AND QTL_ELCOM_025_31d &lt;= 817 AND hist_mean_amount &gt; 2728195.75 AND CT_CREDIT_REQS_350d &lt;= 1.5 AND ct_sbol_null_90d &lt;= 4.5 AND max_max_balance_90d &lt;= 37595.42578125 AND mean_N_UNQ_DAYS_OLD_P2P_350d &lt;= 1.9375</td><td class="branch-description">средняя сумма событий в истории &gt; 2 728 195,75; возраст клиента старше ≈60,7 года и до ≈64,9 года; есть входы без OTP; события через отделение (BRANCH) в истории — не более 1; сумма событий в истории &gt; 10 083 000; <code>CT_OPS_UKO_350d</code> ≤ 1 167,5; 25-й процентиль ELCOM за 31 день ≤ 817; количество кредитных заявок за 350 дней — не более 1; <code>ct_sbol_null_90d</code> ≤ 4,5; максимальный остаток за 90 дней ≤ ≈37 595,43; <code>mean_N_UNQ_DAYS_OLD_P2P_350d</code> ≤ 1,9375.</td><td>28</td><td>20</td><td>48</td><td class="prec-mid">58.3%</td><td>3</td><td>7</td><td>10</td><td class="prec-low">30.0%</td><td>4</td><td>7</td><td>11</td><td class="prec-low">36.4%</td></tr>
+<tr><td><span class="vetv-code">B42</span></td><td>12</td><td class="cond-text">hist_mean_amount &lt;= 711562.65625 AND age_person &gt; 22016.5 AND hist_n_update_user &lt;= 1.5 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23737.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND cards_count_vkcall &lt;= 0.5 AND hist_n_check &gt; 0.5 AND hist_n_change_phone &gt; 1.5 AND max_max_balance_31d &gt; 26588.8798828125 AND ct_call_events &gt; 3.5 AND QTL_AMT_NOT_TRADE_075_61d &gt; 9423.623046875</td><td class="branch-description">средняя сумма событий в истории ≤ ≈711 562,66; возраст клиента старше ≈65,0 года; обновления данных пользователя в истории — не более 1; события через отделение (BRANCH) в истории — не более 1; <code>cards_count_tgbot_victims_check</code> ≤ 0,5; нет карт с сигналом vkcall; есть события CHECK в истории; смены номера телефона в истории — не менее 2; максимальный остаток за 31 день &gt; ≈26 588,88; события звонков — не менее 4; 75-й процентиль суммы неторговых операций за 61 день &gt; ≈9 423,62.</td><td>68</td><td>49</td><td>117</td><td class="prec-mid">58.1%</td><td>10</td><td>11</td><td>21</td><td class="prec-low">47.6%</td><td>9</td><td>15</td><td>24</td><td class="prec-low">37.5%</td></tr>
+<tr><td><span class="vetv-code">B43</span></td><td>2</td><td class="cond-text">cards_count_tgbot_fraud_call &gt; 2 AND has_rdp &gt; 0</td><td class="branch-description"><code>cards_count_tgbot_fraud_call</code> &gt; 2; есть признак RDP.</td><td>19</td><td>14</td><td>33</td><td class="prec-mid">57.6%</td><td>3</td><td>7</td><td>10</td><td class="prec-low">30.0%</td><td>5</td><td>6</td><td>11</td><td class="prec-low">45.5%</td></tr>
+<tr><td><span class="vetv-code">B44</span></td><td>3</td><td class="cond-text">has_rdp &gt; 0 AND ct_tgbot_7d &gt; 1 AND hist_n_events &gt; 0</td><td class="branch-description">есть признак RDP; события tgbot за 7 дней — не менее 2; есть все события в истории.</td><td>90</td><td>69</td><td>159</td><td class="prec-mid">56.6%</td><td>19</td><td>17</td><td>36</td><td class="prec-mid">52.8%</td><td>18</td><td>18</td><td>36</td><td class="prec-mid">50.0%</td></tr>
+<tr><td><span class="vetv-code">B45</span></td><td>2</td><td class="cond-text">ct_enter_pan_sbol_reg &gt; 1 AND max_max_balance_7d &gt; 838398.0250000006</td><td class="branch-description">вводы PAN при регистрации в СБОЛ — не менее 2; максимальный остаток за 7 дней &gt; ≈838 398,03.</td><td>61</td><td>48</td><td>109</td><td class="prec-mid">56.0%</td><td>13</td><td>11</td><td>24</td><td class="prec-mid">54.2%</td><td>7</td><td>17</td><td>24</td><td class="prec-low">29.2%</td></tr>
+<tr><td><span class="vetv-code">B46</span></td><td>3</td><td class="cond-text">max_max_balance_7d &gt; 240001.59453124995 AND has_rdp &gt; 0 AND mean_QTL_095_AMT_card_350d &lt;= 35182.68789062501</td><td class="branch-description">максимальный остаток за 7 дней &gt; ≈240 001,59; есть признак RDP; <code>mean_QTL_095_AMT_card_350d</code> ≤ ≈35 182,69.</td><td>101</td><td>81</td><td>182</td><td class="prec-mid">55.5%</td><td>13</td><td>18</td><td>31</td><td class="prec-low">41.9%</td><td>17</td><td>13</td><td>30</td><td class="prec-mid">56.7%</td></tr>
+<tr><td><span class="vetv-code">B47</span></td><td>15</td><td class="cond-text">hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23703.5 AND hist_sum_amount &gt; 4647384.5 AND ct_ops_transfer_elcom_90d &lt;= 5.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND ct_unq_dates_350d &lt;= 86.5 AND MEAN_AMT_RURPAYMENT_050_61d &lt;= 10449883.5 AND hist_max_amount &gt; 5232300 AND QTL_AMT_card_050_61d &lt;= 19809.53515625 AND sum_has_total_last_balance_lower_10k_31d &lt;= 15 AND SUM_INCOMING_OLD_P2P_31d &lt;= 642451.125</td><td class="branch-description">средняя сумма событий в истории &gt; 1 257 694,8125; возраст клиента старше ≈64,9 года; есть входы без OTP; события через отделение (BRANCH) в истории — не более 1; сумма событий в истории &gt; 4 647 384,5; переводы ELCOM за 90 дней — не более 5; <code>cards_count_tgbot_victims_check</code> ≤ 0,5; даты активности за 350 дней — не более 86; <code>MEAN_AMT_RURPAYMENT_050_61d</code> ≤ 10 449 883,5; максимальная сумма события в истории &gt; 5 232 300; медиана суммы карточных операций за 61 день ≤ ≈19 809,54; <code>sum_has_total_last_balance_lower_10k_31d</code> ≤ 15; сумма входящих OLD_P2P за 31 день ≤ 642 451,125.</td><td>765</td><td>636</td><td>1401</td><td class="prec-mid">54.6%</td><td>148</td><td>148</td><td>296</td><td class="prec-mid">50.0%</td><td>125</td><td>144</td><td>269</td><td class="prec-low">46.5%</td></tr>
+<tr><td><span class="vetv-code">B48</span></td><td>12</td><td class="cond-text">hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23703.5 AND hist_sum_amount &gt; 4647384.5 AND cards_count_tgbot_victims_check_3hr &lt;= 0.5 AND ct_ops_transfer_elcom_90d &lt;= 4.5 AND ct_unq_dates_350d &lt;= 86.5 AND hist_max_amount &gt; 5232300 AND max_rurpayment_350d &lt;= 641175.40625</td><td class="branch-description">средняя сумма событий в истории &gt; 1 257 694,8125; возраст клиента старше ≈64,9 года; есть входы без OTP; события через отделение (BRANCH) в истории — не более 1; сумма событий в истории &gt; 4 647 384,5; <code>cards_count_tgbot_victims_check_3hr</code> ≤ 0,5; переводы ELCOM за 90 дней — не более 4; даты активности за 350 дней — не более 86; максимальная сумма события в истории &gt; 5 232 300; максимум RURPAYMENT за 350 дней ≤ ≈641 175,41.</td><td>784</td><td>676</td><td>1460</td><td class="prec-mid">53.7%</td><td>152</td><td>157</td><td>309</td><td class="prec-low">49.2%</td><td>135</td><td>171</td><td>306</td><td class="prec-low">44.1%</td></tr>
+<tr><td><span class="vetv-code">B49</span></td><td>3</td><td class="cond-text">has_rdp &gt; 0 AND max_max_balance_31d &gt; 387330.46249999956 AND hist_n_issuer_events &lt;= 5</td><td class="branch-description">есть признак RDP; максимальный остаток за 31 день &gt; ≈387 330,46; события с подканалом ISSUER в истории — не более 5.</td><td>100</td><td>93</td><td>193</td><td class="prec-mid">51.8%</td><td>16</td><td>20</td><td>36</td><td class="prec-low">44.4%</td><td>17</td><td>14</td><td>31</td><td class="prec-mid">54.8%</td></tr>
+<tr><td><span class="vetv-code">B50</span></td><td>2</td><td class="cond-text">age_person &gt; 27781.7 AND cards_count_tgbot_victims_check &gt; 5</td><td class="branch-description">возраст клиента старше ≈76,1 года; <code>cards_count_tgbot_victims_check</code> &gt; 5.</td><td>11</td><td>10</td><td>21</td><td class="prec-mid">52.4%</td><td>2</td><td>2</td><td>4</td><td class="prec-mid">50.0%</td><td>7</td><td>3</td><td>10</td><td class="prec-mid">70.0%</td></tr>
+<tr><td><span class="vetv-code">B51</span></td><td>12</td><td class="cond-text">age_person &gt; 20155.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_transaction_amount_hist_1hour &gt; 15612.5 AND QTL_AMT_JURSB_050_61d &lt;= 86447.5 AND hist_call_center_events &lt;= 9.5 AND hist_call_center_events &lt;= 1 AND sum_ops_marketable_350d &lt;= 207615.3 AND hist_sum_amount &gt; 23212608.5 AND CT_OLD_P2P_90d &lt;= 57.63366701210147 AND mean_QTL_095_AMT_JURSB_350d &lt;= 2579060.8591239443 AND QTL_ELCOM_025_31d &lt;= 13670.59802498053</td><td class="branch-description">возраст клиента старше ≈55,2 года; нет идентификаций в ВСП; <code>cards_count_tgbot_fraud_call_2</code> ≤ 0,5; максимальная сумма операции за 1 час &gt; 15 612,5; медиана суммы JURSB за 61 день ≤ 86 447,5; события контактного центра в истории — не более 1; <code>sum_ops_marketable_350d</code> ≤ 207 615,3; сумма событий в истории &gt; 23 212 608,5; количество OLD_P2P за 90 дней — не более 57; <code>mean_QTL_095_AMT_JURSB_350d</code> ≤ ≈2 579 060,86; 25-й процентиль ELCOM за 31 день ≤ ≈13 670,6.</td><td>159</td><td>146</td><td>305</td><td class="prec-mid">52.1%</td><td>33</td><td>34</td><td>67</td><td class="prec-low">49.2%</td><td>44</td><td>31</td><td>75</td><td class="prec-mid">58.7%</td></tr>
+<tr><td><span class="vetv-code">B52</span></td><td>11</td><td class="cond-text">hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23703.5 AND hist_sum_amount &gt; 4647384.5 AND ct_ops_transfer_elcom_90d &lt;= 5.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND ct_unq_dates_350d &lt;= 86.5 AND MEAN_AMT_RURPAYMENT_050_61d &gt; 10449883.5</td><td class="branch-description">средняя сумма событий в истории &gt; 1 257 694,8125; возраст клиента старше ≈64,9 года; есть входы без OTP; события через отделение (BRANCH) в истории — не более 1; сумма событий в истории &gt; 4 647 384,5; переводы ELCOM за 90 дней — не более 5; <code>cards_count_tgbot_victims_check</code> ≤ 0,5; даты активности за 350 дней — не более 86; <code>MEAN_AMT_RURPAYMENT_050_61d</code> &gt; 10 449 883,5.</td><td>27</td><td>25</td><td>52</td><td class="prec-mid">51.9%</td><td>5</td><td>5</td><td>10</td><td class="prec-mid">50.0%</td><td>5</td><td>7</td><td>12</td><td class="prec-low">41.7%</td></tr>
+<tr><td><span class="vetv-code">B53</span></td><td>12</td><td class="cond-text">hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND ct_ops_cards_31d &gt; 0.5 AND std_nolognorm_N_UNQ_SNDRS_OLD_P2P_350d &lt;= 1.1342843770980835 AND hist_max_amount &lt;= 230980 AND std_lognorm_QTL_025_AMT_RURPAY_350d &lt;= 6.151466369628906 AND std_pct_sum_elcom_350d &lt;= 0.186826691031456 AND QTL_AMT_NOT_TRADE_075_31d &lt;= 15010.25 AND risk_ratio_transaction_amount_hist_1day &gt; -0.5</td><td class="branch-description">средняя сумма событий в истории ≤ 878 563,625; возраст клиента старше ≈60,7 года; обновления данных пользователя в истории — не менее 2; число карт с сигналом tgbot — не менее 3; события PAYMENT в истории — не более 2; есть операции по картам за 31 день; <code>std_nolognorm_N_UNQ_SNDRS_OLD_P2P_350d</code> ≤ ≈1,134; максимальная сумма события в истории ≤ 230 980; <code>std_lognorm_QTL_025_AMT_RURPAY_350d</code> ≤ ≈6,151; <code>std_pct_sum_elcom_350d</code> ≤ ≈0,187; 75-й процентиль суммы неторговых операций за 31 день ≤ 15 010,25; <code>risk_ratio_transaction_amount_hist_1day</code> &gt; -0,5.</td><td>72</td><td>67</td><td>139</td><td class="prec-mid">51.8%</td><td>18</td><td>20</td><td>38</td><td class="prec-low">47.4%</td><td>19</td><td>22</td><td>41</td><td class="prec-low">46.3%</td></tr>
+<tr><td><span class="vetv-code">B54</span></td><td>13</td><td class="cond-text">hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23703.5 AND hist_sum_amount &gt; 4647384.5 AND ct_ops_transfer_elcom_90d &lt;= 5.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND ct_unq_dates_350d &lt;= 86.5 AND MEAN_AMT_RURPAYMENT_050_61d &lt;= 10449883.5 AND hist_max_amount &gt; 5232300 AND QTL_AMT_card_050_61d &gt; 19809.53515625</td><td class="branch-description">средняя сумма событий в истории &gt; 1 257 694,8125; возраст клиента старше ≈64,9 года; есть входы без OTP; события через отделение (BRANCH) в истории — не более 1; сумма событий в истории &gt; 4 647 384,5; переводы ELCOM за 90 дней — не более 5; <code>cards_count_tgbot_victims_check</code> ≤ 0,5; даты активности за 350 дней — не более 86; <code>MEAN_AMT_RURPAYMENT_050_61d</code> ≤ 10 449 883,5; максимальная сумма события в истории &gt; 5 232 300; медиана суммы карточных операций за 61 день &gt; ≈19 809,54.</td><td>37</td><td>35</td><td>72</td><td class="prec-mid">51.4%</td><td>7</td><td>5</td><td>12</td><td class="prec-mid">58.3%</td><td>10</td><td>12</td><td>22</td><td class="prec-low">45.5%</td></tr>
+<tr><td><span class="vetv-code">B55</span></td><td>2</td><td class="cond-text">ct_enter_pan_sbol_reg &gt; 5 AND sum_amt_partial_deposit_withdr &gt; 7614030.000000055</td><td class="branch-description">вводы PAN при регистрации в СБОЛ — не менее 6; сумма частичных снятий со вкладов &gt; ≈7 614 030.</td><td>8</td><td>8</td><td>16</td><td class="prec-mid">50.0%</td><td>2</td><td>3</td><td>5</td><td class="prec-low">40.0%</td><td>4</td><td>1</td><td>5</td><td class="prec-high">80.0%</td></tr>
+<tr><td><span class="vetv-code">B56</span></td><td>12</td><td class="cond-text">hist_mean_amount &lt;= 711562.65625 AND age_person &gt; 22016.5 AND hist_n_update_user &gt; 1.5 AND hist_max_amount &lt;= 2325.5 AND cards_count_tgbot &gt; 1.5 AND cards_count_tgbot_victims_crm_alert_3 &lt;= 0.5 AND max_max_balance_31d &gt; 3571.39501953125 AND cards_count_vkcall_match &lt;= 1.5 AND mean_QTL_095_AMT_card_350d &lt;= 32807.2626953125 AND mean_pct_CT_INCOMING_NEW_P2P_CT_OUT_OPS_UKO_350d &lt;= 0.19131944328546524 AND pct_CT_INCOMING_NEW_P2P_350d &lt;= 0.01832182239741087 AND SUM_OPS_UKO_350d &gt; 1580825.8125</td><td class="branch-description">средняя сумма событий в истории ≤ ≈711 562,66; возраст клиента старше ≈60,3 года; обновления данных пользователя в истории — не менее 2; максимальная сумма события в истории ≤ 2 325,5; число карт с сигналом tgbot — не менее 2; <code>cards_count_tgbot_victims_crm_alert_3</code> ≤ 0,5; максимальный остаток за 31 день &gt; ≈3 571,4; число карт с совпадением по vkcall — не более 1; <code>mean_QTL_095_AMT_card_350d</code> ≤ ≈32 807,26; <code>mean_pct_CT_INCOMING_NEW_P2P_CT_OUT_OPS_UKO_350d</code> ≤ ≈0,191; <code>pct_CT_INCOMING_NEW_P2P_350d</code> ≤ ≈0,018; <code>SUM_OPS_UKO_350d</code> &gt; 1 580 825,8125.</td><td>32</td><td>34</td><td>66</td><td class="prec-low">48.5%</td><td>5</td><td>6</td><td>11</td><td class="prec-low">45.5%</td><td>8</td><td>11</td><td>19</td><td class="prec-low">42.1%</td></tr>
+<tr><td><span class="vetv-code">B57</span></td><td>15</td><td class="cond-text">hist_mean_amount &gt; 878563.625 AND age_person &gt; 22155.5 AND ct_signin_wo_otp &gt; 0.5 AND hist_mean_amount &gt; 1257694.8125 AND hist_branch_events &lt;= 1.5 AND age_person &gt; 23703.5 AND hist_sum_amount &gt; 4647384.5 AND ct_ops_transfer_elcom_90d &lt;= 5.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND ct_unq_dates_350d &lt;= 86.5 AND MEAN_AMT_RURPAYMENT_050_61d &lt;= 10449883.5 AND hist_max_amount &gt; 5232300 AND QTL_AMT_card_050_61d &lt;= 19809.53515625 AND sum_has_total_last_balance_lower_10k_31d &lt;= 15 AND SUM_INCOMING_OLD_P2P_31d &gt; 642451.125</td><td class="branch-description">средняя сумма событий в истории &gt; 1 257 694,8125; возраст клиента старше ≈64,9 года; есть входы без OTP; события через отделение (BRANCH) в истории — не более 1; сумма событий в истории &gt; 4 647 384,5; переводы ELCOM за 90 дней — не более 5; <code>cards_count_tgbot_victims_check</code> ≤ 0,5; даты активности за 350 дней — не более 86; <code>MEAN_AMT_RURPAYMENT_050_61d</code> ≤ 10 449 883,5; максимальная сумма события в истории &gt; 5 232 300; медиана суммы карточных операций за 61 день ≤ ≈19 809,54; <code>sum_has_total_last_balance_lower_10k_31d</code> ≤ 15; сумма входящих OLD_P2P за 31 день &gt; 642 451,125.</td><td>15</td><td>16</td><td>31</td><td class="prec-low">48.4%</td><td>5</td><td>5</td><td>10</td><td class="prec-mid">50.0%</td><td>3</td><td>5</td><td>8</td><td class="prec-low">37.5%</td></tr>
+<tr><td><span class="vetv-code">B58</span></td><td>11</td><td class="cond-text">hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND pct_ct_unq_new_inc_cards_rsa_350d &lt;= 0.04499494470655918 AND max_max_balance_90d &gt; 9577.89013671875 AND hist_n_unique_dates &gt; 1.5 AND rest &gt; 36581.96875 AND sum_cards_amt_61d &gt; 29436.6796875 AND cards_count_vkcall_match_other_out &lt;= 2.5</td><td class="branch-description">средняя сумма событий в истории ≤ 878 563,625; возраст клиента старше ≈60,7 года; обновления данных пользователя в истории — не менее 2; число карт с сигналом tgbot — не менее 3; события PAYMENT в истории — не более 2; <code>pct_ct_unq_new_inc_cards_rsa_350d</code> ≤ ≈0,045; максимальный остаток за 90 дней &gt; ≈9 577,89; даты с событиями в истории — не менее 2; <code>rest</code> &gt; ≈36 581,97; сумма операций по картам за 61 день &gt; ≈29 436,68; число карт по сигналу vkcall_match_other_out — не более 2.</td><td>88</td><td>98</td><td>186</td><td class="prec-low">47.3%</td><td>14</td><td>22</td><td>36</td><td class="prec-low">38.9%</td><td>21</td><td>15</td><td>36</td><td class="prec-mid">58.3%</td></tr>
+<tr><td><span class="vetv-code">B59</span></td><td>12</td><td class="cond-text">hist_mean_amount &gt; 711562.65625 AND hist_mean_amount &gt; 2003335.1875 AND age_person &gt; 21237 AND ct_signin_wo_otp &gt; 0.5 AND ct_vsp_identifications &lt;= 0.5 AND age_person &gt; 23709 AND N_UNQ_DATES_350d &lt;= 196.5 AND hist_sum_amount &gt; 9005005.5 AND n_unq_inc_cards_rsa_31d &lt;= 11.5 AND ct_ops_telefon_elcom_90d &lt;= 0.5 AND pct_SUM_AMT_RURPAYMENT_350d &gt; 3.7626644372940063 AND QTL_TRADE_mccs_075_61d &lt;= 844.3269348144531</td><td class="branch-description">средняя сумма событий в истории &gt; 2 003 335,1875; возраст клиента старше ≈64,9 года; есть входы без OTP; нет идентификаций в ВСП; количество уникальных дат за 350 дней — не более 196; сумма событий в истории &gt; 9 005 005,5; уникальные карты входящих RSA за 31 день — не более 11; нет операций оплаты телефона ELCOM за 90 дней; <code>pct_SUM_AMT_RURPAYMENT_350d</code> &gt; ≈3,763; <code>QTL_TRADE_mccs_075_61d</code> ≤ ≈844,327.</td><td>67</td><td>75</td><td>142</td><td class="prec-low">47.2%</td><td>11</td><td>16</td><td>27</td><td class="prec-low">40.7%</td><td>12</td><td>20</td><td>32</td><td class="prec-low">37.5%</td></tr>
+<tr><td><span class="vetv-code">B60</span></td><td>9</td><td class="cond-text">hist_mean_amount &gt; 711562.65625 AND hist_mean_amount &gt; 2003335.1875 AND age_person &gt; 21237 AND ct_signin_wo_otp &gt; 0.5 AND ct_vsp_identifications &lt;= 0.5 AND age_person &gt; 23709 AND N_UNQ_DATES_350d &lt;= 196.5 AND hist_sum_amount &gt; 9005005.5 AND n_unq_inc_cards_rsa_31d &gt; 11.5</td><td class="branch-description">средняя сумма событий в истории &gt; 2 003 335,1875; возраст клиента старше ≈64,9 года; есть входы без OTP; нет идентификаций в ВСП; количество уникальных дат за 350 дней — не более 196; сумма событий в истории &gt; 9 005 005,5; уникальные карты входящих RSA за 31 день — не менее 12.</td><td>33</td><td>37</td><td>70</td><td class="prec-low">47.1%</td><td>2</td><td>3</td><td>5</td><td class="prec-low">40.0%</td><td>5</td><td>7</td><td>12</td><td class="prec-low">41.7%</td></tr>
+<tr><td><span class="vetv-code">B61</span></td><td>15</td><td class="cond-text">age_person &gt; 20155.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_transaction_amount_hist_1hour &gt; 15612.5 AND QTL_AMT_JURSB_050_61d &gt; 86447.5 AND hist_n_update_user &gt; 1 AND hist_mean_amount &gt; 2500000 AND sum_cards_amt_61d &lt;= 2166117.693814968 AND SUM_INCOMING_PAYMENTS_RSA_350d &lt;= 45755476.83497788 AND QTL_ELCOM_025_31d &lt;= 2530.071080757343 AND cards_count_tgbot_fraud_call &lt;= 0 AND ct_unq_osids &lt;= 1 AND hist_n_events &gt; 4.496915329527663 AND cards_count_vkcall &lt;= 0 AND ct_signin_wo_otp &gt; 0.8666224907133859</td><td class="branch-description">возраст клиента старше ≈55,2 года; нет идентификаций в ВСП; <code>cards_count_tgbot_fraud_call_2</code> ≤ 0,5; максимальная сумма операции за 1 час &gt; 15 612,5; медиана суммы JURSB за 61 день &gt; 86 447,5; обновления данных пользователя в истории — не менее 2; средняя сумма событий в истории &gt; 2 500 000; сумма операций по картам за 61 день ≤ ≈2 166 117,69; <code>SUM_INCOMING_PAYMENTS_RSA_350d</code> ≤ ≈45 755 476,83; 25-й процентиль ELCOM за 31 день ≤ ≈2 530,07; <code>cards_count_tgbot_fraud_call</code> ≤ 0; уникальные OSID — не более 1; все события в истории — не менее 5; нет карт с сигналом vkcall; есть входы без OTP.</td><td>66</td><td>74</td><td>140</td><td class="prec-low">47.1%</td><td>15</td><td>24</td><td>39</td><td class="prec-low">38.5%</td><td>5</td><td>11</td><td>16</td><td class="prec-low">31.2%</td></tr>
+<tr><td><span class="vetv-code">B62</span></td><td>11</td><td class="cond-text">hist_mean_amount &gt; 711562.65625 AND hist_mean_amount &gt; 2003335.1875 AND age_person &gt; 21237 AND ct_signin_wo_otp &gt; 0.5 AND ct_vsp_identifications &lt;= 0.5 AND age_person &gt; 23709 AND N_UNQ_DATES_350d &gt; 196.5 AND cards_count_tgbot_victims_check &lt;= 0.5 AND hist_max_amount &gt; 6502576.5 AND QTL_AMT_TRADE_050_61d &lt;= 1257.8087158203125 AND max_rurpayment_350d &lt;= 15050</td><td class="branch-description">средняя сумма событий в истории &gt; 2 003 335,1875; возраст клиента старше ≈64,9 года; есть входы без OTP; нет идентификаций в ВСП; количество уникальных дат за 350 дней — не менее 197; <code>cards_count_tgbot_victims_check</code> ≤ 0,5; максимальная сумма события в истории &gt; 6 502 576,5; медиана суммы торговых операций за 61 день ≤ ≈1 257,81; максимум RURPAYMENT за 350 дней ≤ 15 050.</td><td>42</td><td>50</td><td>92</td><td class="prec-low">45.6%</td><td>6</td><td>10</td><td>16</td><td class="prec-low">37.5%</td><td>9</td><td>14</td><td>23</td><td class="prec-low">39.1%</td></tr>
+<tr><td><span class="vetv-code">B63</span></td><td>12</td><td class="cond-text">hist_mean_amount &lt;= 711562.65625 AND age_person &gt; 22016.5 AND hist_n_update_user &gt; 1.5 AND hist_max_amount &lt;= 2325.5 AND cards_count_tgbot &gt; 1.5 AND cards_count_tgbot_victims_crm_alert_3 &lt;= 0.5 AND max_max_balance_31d &gt; 3571.39501953125 AND cards_count_vkcall_match &lt;= 1.5 AND mean_QTL_095_AMT_card_350d &lt;= 32807.2626953125 AND mean_pct_CT_INCOMING_NEW_P2P_CT_OUT_OPS_UKO_350d &lt;= 0.19131944328546524 AND pct_CT_INCOMING_NEW_P2P_350d &lt;= 0.01832182239741087 AND SUM_OPS_UKO_350d &lt;= 1580825.8125</td><td class="branch-description">средняя сумма событий в истории ≤ ≈711 562,66; возраст клиента старше ≈60,3 года; обновления данных пользователя в истории — не менее 2; максимальная сумма события в истории ≤ 2 325,5; число карт с сигналом tgbot — не менее 2; <code>cards_count_tgbot_victims_crm_alert_3</code> ≤ 0,5; максимальный остаток за 31 день &gt; ≈3 571,4; число карт с совпадением по vkcall — не более 1; <code>mean_QTL_095_AMT_card_350d</code> ≤ ≈32 807,26; <code>mean_pct_CT_INCOMING_NEW_P2P_CT_OUT_OPS_UKO_350d</code> ≤ ≈0,191; <code>pct_CT_INCOMING_NEW_P2P_350d</code> ≤ ≈0,018; <code>SUM_OPS_UKO_350d</code> ≤ 1 580 825,8125.</td><td>331</td><td>399</td><td>730</td><td class="prec-low">45.3%</td><td>61</td><td>104</td><td>165</td><td class="prec-low">37.0%</td><td>74</td><td>87</td><td>161</td><td class="prec-low">46.0%</td></tr>
+<tr><td><span class="vetv-code">B64</span></td><td>11</td><td class="cond-text">hist_mean_amount &lt;= 878563.625 AND age_person &lt;= 22172.5 AND ct_enter_pan_sbol_reg &lt;= 0.5 AND cards_count_tgbot_fraud_call &gt; 0.5 AND CT_OPS_UKO_350d &gt; 28 AND cards_count_tgbot &gt; 1.5 AND hist_n_unique_dates &gt; 0.5 AND hist_n_payment &lt;= 10.5 AND hist_max_amount &lt;= 717500 AND sum_amt_cards_350d &lt;= 223798.046875 AND cards_count_tgbot_fraud_call_5 &gt; 0.5</td><td class="branch-description">средняя сумма событий в истории ≤ 878 563,625; возраст клиента не старше ≈60,7 года; нет вводов PAN при регистрации в СБОЛ; <code>cards_count_tgbot_fraud_call</code> &gt; 0,5; <code>CT_OPS_UKO_350d</code> &gt; 28; число карт с сигналом tgbot — не менее 2; есть даты с событиями в истории; события PAYMENT в истории — не более 10; максимальная сумма события в истории ≤ 717 500; сумма карточных операций за 350 дней ≤ ≈223 798,05; <code>cards_count_tgbot_fraud_call_5</code> &gt; 0,5.</td><td>28</td><td>34</td><td>62</td><td class="prec-low">45.2%</td><td>7</td><td>6</td><td>13</td><td class="prec-mid">53.8%</td><td>7</td><td>5</td><td>12</td><td class="prec-mid">58.3%</td></tr>
+<tr><td><span class="vetv-code">B65</span></td><td>11</td><td class="cond-text">hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &gt; 2.5 AND hist_n_payment &lt;= 2.5 AND ct_ops_cards_31d &gt; 0.5 AND std_nolognorm_N_UNQ_SNDRS_OLD_P2P_350d &lt;= 1.1342843770980835 AND hist_max_amount &lt;= 230980 AND std_lognorm_QTL_025_AMT_RURPAY_350d &lt;= 6.151466369628906 AND std_pct_sum_elcom_350d &lt;= 0.186826691031456 AND QTL_AMT_NOT_TRADE_075_31d &gt; 15010.25</td><td class="branch-description">средняя сумма событий в истории ≤ 878 563,625; возраст клиента старше ≈60,7 года; обновления данных пользователя в истории — не менее 2; число карт с сигналом tgbot — не менее 3; события PAYMENT в истории — не более 2; есть операции по картам за 31 день; <code>std_nolognorm_N_UNQ_SNDRS_OLD_P2P_350d</code> ≤ ≈1,134; максимальная сумма события в истории ≤ 230 980; <code>std_lognorm_QTL_025_AMT_RURPAY_350d</code> ≤ ≈6,151; <code>std_pct_sum_elcom_350d</code> ≤ ≈0,187; 75-й процентиль суммы неторговых операций за 31 день &gt; 15 010,25.</td><td>30</td><td>38</td><td>68</td><td class="prec-low">44.1%</td><td>9</td><td>5</td><td>14</td><td class="prec-mid">64.3%</td><td>5</td><td>10</td><td>15</td><td class="prec-low">33.3%</td></tr>
+<tr><td><span class="vetv-code">B66</span></td><td>14</td><td class="cond-text">hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &lt;= 2.5 AND ct_sms_confirm &gt; 0.5 AND ct_signin_w_pan &gt; 0.5 AND CT_NEW_MP_350d &lt;= 24.5 AND ct_vsp_identifications &lt;= 0.5 AND cards_sum_to_rcvrs_1day &lt;= 921.5 AND N_UNQ_RCVRS_OLD_P2P_350d &lt;= 43.5 AND QTL_AMT_RURPAY_025_31d &lt;= 99591.66796875 AND CT_NEW_JURSB_61d &lt;= 1.5 AND max_amt_elcom_7d &lt;= 519 AND std_lognorm_sum_amt_cards_350d &lt;= 0.11531415954232216</td><td class="branch-description">средняя сумма событий в истории ≤ 878 563,625; возраст клиента старше ≈60,7 года; обновления данных пользователя в истории — не менее 2; число карт с сигналом tgbot — не более 2; есть SMS-подтверждения; есть входы с использованием PAN; <code>CT_NEW_MP_350d</code> ≤ 24,5; нет идентификаций в ВСП; <code>cards_sum_to_rcvrs_1day</code> ≤ 921,5; уникальные получатели OLD_P2P за 350 дней — не более 43; 25-й процентиль суммы RURPAY за 31 день ≤ ≈99 591,67; <code>CT_NEW_JURSB_61d</code> ≤ 1,5; максимальная сумма операции ELCOM за 7 дней ≤ 519; <code>std_lognorm_sum_amt_cards_350d</code> ≤ ≈0,115.</td><td>27</td><td>35</td><td>62</td><td class="prec-low">43.5%</td><td>7</td><td>4</td><td>11</td><td class="prec-mid">63.6%</td><td>2</td><td>9</td><td>11</td><td class="prec-low">18.2%</td></tr>
+<tr><td><span class="vetv-code">B67</span></td><td>11</td><td class="cond-text">hist_mean_amount &lt;= 711562.65625 AND age_person &lt;= 22016.5 AND ct_signin_w_pan &lt;= 0.5 AND cards_count_tgbot_fraud_call &gt; 0.5 AND std_nolognorm_CT_OPS_UKO_350d &gt; 2.280286431312561 AND cards_count_tgbot_fraud_call_2 &lt;= 0.5 AND max_sum_last_balance_90d &gt; 43.44500160217285 AND hist_n_payment &lt;= 4.5 AND cards_count_tgbot_fraud_call_4 &lt;= 0.5 AND cards_count_tgbot_fraud_call_5 &gt; 0.5 AND hist_n_events &gt; 4.5</td><td class="branch-description">средняя сумма событий в истории ≤ ≈711 562,66; возраст клиента не старше ≈60,3 года; нет входов с использованием PAN; <code>cards_count_tgbot_fraud_call</code> &gt; 0,5; <code>std_nolognorm_CT_OPS_UKO_350d</code> &gt; ≈2,28; <code>cards_count_tgbot_fraud_call_2</code> ≤ 0,5; <code>max_sum_last_balance_90d</code> &gt; ≈43,445; события PAYMENT в истории — не более 4; <code>cards_count_tgbot_fraud_call_4</code> ≤ 0,5; <code>cards_count_tgbot_fraud_call_5</code> &gt; 0,5; все события в истории — не менее 5.</td><td>65</td><td>89</td><td>154</td><td class="prec-low">42.2%</td><td>8</td><td>14</td><td>22</td><td class="prec-low">36.4%</td><td>19</td><td>16</td><td>35</td><td class="prec-mid">54.3%</td></tr>
+<tr><td><span class="vetv-code">B68</span></td><td>12</td><td class="cond-text">hist_mean_amount &lt;= 878563.625 AND age_person &lt;= 22172.5 AND ct_enter_pan_sbol_reg &lt;= 0.5 AND cards_count_tgbot_fraud_call &gt; 0.5 AND CT_OPS_UKO_350d &gt; 28 AND cards_count_tgbot &gt; 1.5 AND hist_n_unique_dates &gt; 0.5 AND hist_n_payment &lt;= 10.5 AND hist_max_amount &lt;= 717500 AND sum_amt_cards_350d &gt; 223798.046875 AND hist_n_payment &lt;= 3.5 AND CT_APPEAL_90d &lt;= 1.5</td><td class="branch-description">средняя сумма событий в истории ≤ 878 563,625; возраст клиента не старше ≈60,7 года; нет вводов PAN при регистрации в СБОЛ; <code>cards_count_tgbot_fraud_call</code> &gt; 0,5; <code>CT_OPS_UKO_350d</code> &gt; 28; число карт с сигналом tgbot — не менее 2; есть даты с событиями в истории; события PAYMENT в истории — не более 3; максимальная сумма события в истории ≤ 717 500; сумма карточных операций за 350 дней &gt; ≈223 798,05; <code>CT_APPEAL_90d</code> ≤ 1,5.</td><td>135</td><td>195</td><td>330</td><td class="prec-low">40.9%</td><td>19</td><td>43</td><td>62</td><td class="prec-low">30.6%</td><td>38</td><td>40</td><td>78</td><td class="prec-low">48.7%</td></tr>
+<tr><td><span class="vetv-code">B69</span></td><td>10</td><td class="cond-text">hist_mean_amount &lt;= 878563.625 AND age_person &gt; 22172.5 AND hist_n_update_user &gt; 1.5 AND cards_count_tgbot &lt;= 2.5 AND ct_sms_confirm &gt; 0.5 AND ct_enter_pan_sbol_reg &gt; 0.5 AND CT_NEW_MP_350d &lt;= 16.5 AND max_max_balance_7d &gt; 24714.8349609375 AND QTL_AMT_TRADE_095_7d &lt;= 1813.214599609375 AND mean_QTL_095_TRADE_mccs_350d &lt;= 613.3033447265625</td><td class="branch-description">средняя сумма событий в истории ≤ 878 563,625; возраст клиента старше ≈60,7 года; обновления данных пользователя в истории — не менее 2; число карт с сигналом tgbot — не более 2; есть SMS-подтверждения; есть вводы PAN при регистрации в СБОЛ; <code>CT_NEW_MP_350d</code> ≤ 16,5; максимальный остаток за 7 дней &gt; ≈24 714,83; 95-й процентиль суммы торговых операций за 7 дней ≤ ≈1 813,21; <code>mean_QTL_095_TRADE_mccs_350d</code> ≤ ≈613,303.</td><td>35</td><td>52</td><td>87</td><td class="prec-low">40.2%</td><td>4</td><td>9</td><td>13</td><td class="prec-low">30.8%</td><td>4</td><td>10</td><td>14</td><td class="prec-low">28.6%</td></tr>
+</table>
+</div>
+</div>
+<h2>5. Расчёт hist-признаков</h2>
+<div class="section">
+<p>13 hist-признаков, отсутствующих в исходном файле <code>ops_enriched</code> и вычисляемых из таблицы истории событий (<code>hist_table</code>). Все агрегаты исключают само событие решения (<code>is_src_event = false</code>), NULL заменяются на 0 через <code>COALESCE</code>.</p>
+<table>
+<tr>
+<th>Признак</th>
+<th>SQL-формула</th>
+<th>Условие</th>
+<th>Описание</th>
+</tr>
+<tr>
+<td><code>hist_n_events</code></td>
+<td><code>COUNT(*)</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Количество всех событий в истории</td>
+</tr>
+<tr>
+<td><code>hist_n_change_phone</code></td>
+<td><code>COUNT(*) FILTER (WHERE event_type = 'CHANGE_PHONE')</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Количество смен телефона</td>
+</tr>
+<tr>
+<td><code>hist_n_update_user</code></td>
+<td><code>COUNT(*) FILTER (WHERE event_type = 'UPDATE_USER')</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Количество обновлений данных пользователя</td>
+</tr>
+<tr>
+<td><code>hist_n_payment</code></td>
+<td><code>COUNT(*) FILTER (WHERE event_type = 'PAYMENT')</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Количество платежей</td>
+</tr>
+<tr>
+<td><code>hist_n_check</code></td>
+<td><code>COUNT(*) FILTER (WHERE event_type = 'CHECK')</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Количество проверок</td>
+</tr>
+<tr>
+<td><code>hist_n_issuer_events</code></td>
+<td><code>COUNT(*) FILTER (WHERE sub_channel = 'ISSUER')</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Количество событий эмитента</td>
+</tr>
+<tr>
+<td><code>hist_n_unique_dates</code></td>
+<td><code>COUNT(DISTINCT event_dt)</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Количество уникальных дат событий</td>
+</tr>
+<tr>
+<td><code>hist_branch_events</code></td>
+<td><code>COUNT(*) FILTER (WHERE event_channel = 'BRANCH')</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Количество событий в отделении</td>
+</tr>
+<tr>
+<td><code>hist_call_center_events</code></td>
+<td><code>COUNT(*) FILTER (WHERE event_channel = 'CALL_CENTER')</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Количество событий в колл-центре</td>
+</tr>
+<tr>
+<td><code>hist_mb_on</code></td>
+<td><code>COUNT(*) FILTER (WHERE sub_type = 'MB_ON')</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Количество включений мобильного банка</td>
+</tr>
+<tr>
+<td><code>hist_mean_amount</code></td>
+<td><code>AVG(CAST(transaction_amount AS FLOAT64))</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Средняя сумма транзакции</td>
+</tr>
+<tr>
+<td><code>hist_max_amount</code></td>
+<td><code>MAX(CAST(transaction_amount AS FLOAT64))</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Максимальная сумма транзакции</td>
+</tr>
+<tr>
+<td><code>hist_sum_amount</code></td>
+<td><code>SUM(CAST(transaction_amount AS FLOAT64))</code></td>
+<td><code>WHERE is_src_event = false</code></td>
+<td>Сумма всех транзакций</td>
+</tr>
+</table>
+<h3>Общая структура расчёта</h3>
+<pre>
+WITH hist_features AS (
+    SELECT
+        event_id_src,
+        user_id_src,
+        COUNT(*) AS hist_n_events,
+        COUNT(*) FILTER (WHERE event_type = 'CHANGE_PHONE') AS hist_n_change_phone,
+        COUNT(*) FILTER (WHERE event_type = 'UPDATE_USER') AS hist_n_update_user,
+        COUNT(*) FILTER (WHERE event_type = 'PAYMENT') AS hist_n_payment,
+        COUNT(*) FILTER (WHERE event_type = 'CHECK') AS hist_n_check,
+        COUNT(*) FILTER (WHERE sub_channel = 'ISSUER') AS hist_n_issuer_events,
+        COUNT(DISTINCT event_dt) AS hist_n_unique_dates,
+        COUNT(*) FILTER (WHERE event_channel = 'BRANCH') AS hist_branch_events,
+        COUNT(*) FILTER (WHERE event_channel = 'CALL_CENTER') AS hist_call_center_events,
+        COUNT(*) FILTER (WHERE sub_type = 'MB_ON') AS hist_mb_on,
+        AVG(CAST(transaction_amount AS FLOAT64)) AS hist_mean_amount,
+        MAX(CAST(transaction_amount AS FLOAT64)) AS hist_max_amount,
+        SUM(CAST(transaction_amount AS FLOAT64)) AS hist_sum_amount
+    FROM hist_table
+    WHERE is_src_event = false
+    GROUP BY event_id_src, user_id_src
+),
+
+ops_with_features AS (
+    SELECT
+        o.*,
+        COALESCE(hf.hist_n_events, 0) AS hist_n_events,
+        COALESCE(hf.hist_n_change_phone, 0) AS hist_n_change_phone,
+        COALESCE(hf.hist_n_update_user, 0) AS hist_n_update_user,
+        COALESCE(hf.hist_n_payment, 0) AS hist_n_payment,
+        COALESCE(hf.hist_n_check, 0) AS hist_n_check,
+        COALESCE(hf.hist_n_issuer_events, 0) AS hist_n_issuer_events,
+        COALESCE(hf.hist_n_unique_dates, 0) AS hist_n_unique_dates,
+        COALESCE(hf.hist_branch_events, 0) AS hist_branch_events,
+        COALESCE(hf.hist_call_center_events, 0) AS hist_call_center_events,
+        COALESCE(hf.hist_mb_on, 0) AS hist_mb_on,
+        COALESCE(hf.hist_mean_amount, 0) AS hist_mean_amount,
+        COALESCE(hf.hist_max_amount, 0) AS hist_max_amount,
+        COALESCE(hf.hist_sum_amount, 0) AS hist_sum_amount
+    FROM ops_table o
+    LEFT JOIN hist_features hf
+        ON o.event_id = hf.event_id_src
+       AND o.user_id = hf.user_id_src
+)
+SELECT * FROM ops_with_features;
+</pre>
+</div>
+<div class="footer">
+<p>Антифрод-правило 2 | 68 ветвей | 122 признака | 13 hist-признаков</p>
+<p>Период данных: event_dt 20260601 — 20260701 | Выборки: TRAIN, TEST, OSS</p>
+</div>
+</div>
+</body>
+</html>
